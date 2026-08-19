@@ -1,0 +1,17 @@
+services:
+  dashboard:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      # Generate with: openssl rand -base64 32
+      AUTH_SECRET: ${AUTH_SECRET:?set AUTH_SECRET in .env}
+      # Prefer APP_PASSWORD_HASH in production — see scripts/hash-password.mjs
+      APP_PASSWORD: ${APP_PASSWORD:-}
+      APP_PASSWORD_HASH: ${APP_PASSWORD_HASH:-}
+    volumes:
+      - dashboard-db:/app/db
+    restart: unless-stopped
+
+volumes:
+  dashboard-db:

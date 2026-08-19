@@ -1,36 +1,125 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Yit's Dashboard
 
-## Getting Started
+A personal progress dashboard: gym streaks, LeetCode practice, interview
+pipeline, school deadlines, money, and a daily checklist — with a GitHub-style
+activity heatmap. Full-stack Next.js app with a real database, so every
+checkmark, log, and dollar you add is saved and interactive (not a static
+mockup).
 
-First, run the development server:
+## Stack
+
+- **Next.js 16** (App Router, TypeScript, Turbopack)
+- **Tailwind CSS v4** for styling
+- **SQLite / libSQL** (`@libsql/client`) for storage — works as a plain local
+  file with zero setup, and swaps to [Turso](https://turso.tech) (hosted
+  libSQL) with just an env var change if you deploy somewhere serverless
+- **Single-user password auth** via a signed, httpOnly session cookie (JWT)
+- **SWR** on the client for fetching + revalidation, so the UI updates as
+  soon as you add or check something off
+
+## Running it locally
+
+```bash
+npm install
+cp .env.example .env.local
+```
+
+Edit `.env.local`:
+
+- `AUTH_SECRET` — any random string, 16+ characters (`openssl rand -base64 32`)
+- `APP_PASSWORD` — the password you'll type in to sign in (quick start)
+
+Then:
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open http://localhost:3000 — the database (a SQLite file at `db/local.db`)
+and its tables are created automatically on first request.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Deploying it
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+The app needs somewhere to *persist* the SQLite file, so where you deploy
+matters more than with a typical static Next.js app. Two good options:
 
-## Learn More
+### Option A — Docker, anywhere with a persistent volume (recommended)
 
-To learn more about Next.js, take a look at the following resources:
+Works on Railway, Fly.io, Render, a VPS, or your own machine. The included
+`Dockerfile` builds a minimal standalone image; `docker-compose.yml` wires up
+a named volume so the database survives restarts and redeploys.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+cp .env.example .env   # fill in AUTH_SECRET and APP_PASSWORD (or APP_PASSWORD_HASH)
+docker compose up -d --build
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+The app will be on http://localhost:3000. For a real deployment, point your
+platform's "deploy from Dockerfile" flow at this repo and attach a persistent
+volume at `/app/db`.
 
-## Deploy on Vercel
+**Railway** specifically: create a new project from this GitHub repo, add a
+volume mounted at `/app/db`, and set `AUTH_SECRET` + `APP_PASSWORD` (or
+`APP_PASSWORD_HASH`) as environment variables. Railway detects the Dockerfile
+automatically.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+### Option B — Vercel (serverless) + Turso
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Vercel's filesystem is ephemeral, so a local SQLite file won't persist there.
+Instead, use [Turso](https://turso.tech) (free tier, SQLite-compatible,
+built on the same libSQL client this app already uses — no code changes):
+
+1. `turso db create yit-dashboard`
+2. `turso db show yit-dashboard --url` → set as `DATABASE_URL`
+3. `turso db tokens create yit-dashboard` → set as `DATABASE_AUTH_TOKEN`
+4. Import the repo into Vercel, add `DATABASE_URL`, `DATABASE_AUTH_TOKEN`,
+   `AUTH_SECRET`, and `APP_PASSWORD` (or `APP_PASSWORD_HASH`) as environment
+   variables, and deploy.
+
+## Pushing this to GitHub
+
+This project is already a git repo with an initial commit. To publish it:
+
+```bash
+gh repo create yit-dashboard --private --source=. --remote=origin --push
+# or, without the GitHub CLI:
+git remote add origin https://github.com/<your-username>/yit-dashboard.git
+git push -u origin main
+```
+
+## Security notes
+
+- Set a real `AUTH_SECRET` before deploying anywhere reachable from the
+  internet — the app refuses to start without one.
+- Prefer `APP_PASSWORD_HASH` over plain `APP_PASSWORD` once this is
+  internet-facing: `node scripts/hash-password.mjs "your password"` prints a
+  bcrypt hash to use instead of storing the plaintext password in an env var.
+- This is intentionally single-user (one shared password, no accounts) —
+  it's a personal dashboard, not a multi-tenant app.
+
+## Project structure
+
+```
+src/
+  app/
+    login/                # sign-in page
+    (app)/                # everything behind auth, shares the sidebar/nav
+      page.tsx            # overview: stat cards + activity heatmap
+      gym/ leetcode/ interviews/ school/ finance/ checklist/
+    api/                  # REST-ish route handlers, one folder per resource
+  components/              # Nav, Heatmap, StatCard, Modal, etc.
+  lib/
+    db.ts                 # libSQL client + schema migration (runs lazily)
+    auth.ts                # session cookie + password verification
+    types.ts               # shared types
+  proxy.ts                 # route protection (Next.js 16's proxy.js, formerly middleware)
+scripts/hash-password.mjs  # generate APP_PASSWORD_HASH
+```
+
+## Extending it
+
+Everything lives in six SQLite tables (`gym_logs`, `leetcode_logs`,
+`interviews`, `school_tasks`, `finance_transactions`, `checklist_items`) —
+see `src/lib/db.ts` for the schema. Add a column or table there, add a route
+in `src/app/api/`, and a page/component to surface it; the pattern is the
+same across every section.
