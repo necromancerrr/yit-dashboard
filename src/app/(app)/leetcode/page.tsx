@@ -2,8 +2,9 @@
 
 import { useState } from "react";
 import useSWR from "swr";
-import { Code2, Plus, Trash2, ExternalLink } from "lucide-react";
-import { fetcher, apiPost, apiDelete } from "@/lib/fetcher";
+import { Code2, Plus, Trash2, ExternalLink, Pencil } from "lucide-react";
+import { fetcher, apiPost, apiPatch } from "@/lib/fetcher";
+import { useUndoableDelete } from "@/lib/useUndoableDelete";
 import { PageHeader } from "@/components/PageHeader";
 import { EmptyState } from "@/components/EmptyState";
 import { Modal } from "@/components/Modal";
@@ -25,35 +26,70 @@ function fmt(iso: string) {
   return new Date(iso + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric", weekday: "short" });
 }
 
+const emptyForm = {
+  date: todayISO(),
+  problem_name: "",
+  difficulty: "Medium" as (typeof DIFFICULTIES)[number],
+  topic: "",
+  url: "",
+  notes: "",
+};
+
 export default function LeetcodePage() {
   const { data, isLoading, mutate } = useSWR<{ items: LeetcodeLog[] }>("/api/leetcode", fetcher);
   const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState<LeetcodeLog | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [form, setForm] = useState({
-    date: todayISO(),
-    problem_name: "",
-    difficulty: "Medium" as (typeof DIFFICULTIES)[number],
-    topic: "",
-    url: "",
-    notes: "",
+  const [form, setForm] = useState(emptyForm);
+
+  const allItems = data?.items ?? [];
+  const { visibleItems: items, requestDelete } = useUndoableDelete(allItems, {
+    deleteUrl: (item) => `/api/leetcode/${item.id}`,
+    label: (item) => item.problem_name,
+    onCommitted: () => mutate(),
   });
+
+  function openAdd() {
+    setEditing(null);
+    setForm(emptyForm);
+    setError(null);
+    setOpen(true);
+  }
+
+  function openEdit(log: LeetcodeLog) {
+    setEditing(log);
+    setForm({
+      date: log.date,
+      problem_name: log.problem_name,
+      difficulty: log.difficulty,
+      topic: log.topic ?? "",
+      url: log.url ?? "",
+      notes: log.notes ?? "",
+    });
+    setError(null);
+    setOpen(true);
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
     setError(null);
+    const payload = {
+      date: form.date,
+      problem_name: form.problem_name,
+      difficulty: form.difficulty,
+      topic: form.topic || null,
+      url: form.url || null,
+      notes: form.notes || null,
+    };
     try {
-      await apiPost("/api/leetcode", {
-        date: form.date,
-        problem_name: form.problem_name,
-        difficulty: form.difficulty,
-        topic: form.topic || null,
-        url: form.url || null,
-        notes: form.notes || null,
-      });
+      if (editing) {
+        await apiPatch(`/api/leetcode/${editing.id}`, payload);
+      } else {
+        await apiPost("/api/leetcode", payload);
+      }
       setOpen(false);
-      setForm({ date: todayISO(), problem_name: "", difficulty: "Medium", topic: "", url: "", notes: "" });
       mutate();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save");
@@ -62,12 +98,6 @@ export default function LeetcodePage() {
     }
   }
 
-  async function handleDelete(id: number) {
-    await apiDelete(`/api/leetcode/${id}`);
-    mutate();
-  }
-
-  const items = data?.items ?? [];
   const counts = { Easy: 0, Medium: 0, Hard: 0 } as Record<string, number>;
   for (const it of items) counts[it.difficulty] = (counts[it.difficulty] ?? 0) + 1;
 
@@ -77,7 +107,7 @@ export default function LeetcodePage() {
         title="LeetCode"
         subtitle={`${items.length} problems solved`}
         action={
-          <button className="btn btn-primary" onClick={() => setOpen(true)}>
+          <button className="btn btn-primary" onClick={openAdd}>
             <Plus size={15} /> Log problem
           </button>
         }
@@ -110,13 +140,24 @@ export default function LeetcodePage() {
           <ul className="divide-y" style={{ borderColor: "var(--border)" }}>
             {items.map((log) => (
               <li key={log.id} className="flex items-center justify-between gap-3 px-4 py-3 group">
-                <div className="flex items-center gap-3 min-w-0">
+                <button
+                  onClick={() => openEdit(log)}
+                  className="flex items-center gap-3 min-w-0 text-left flex-1"
+                  aria-label={`Edit ${log.problem_name}`}
+                >
                   <span className="dot shrink-0" style={{ background: DIFFICULTY_COLOR[log.difficulty] }} />
                   <div className="min-w-0">
                     <p className="text-sm font-medium truncate flex items-center gap-1.5">
                       {log.problem_name}
                       {log.url && (
-                        <a href={log.url} target="_blank" rel="noreferrer" className="icon-btn w-5 h-5">
+                        <a
+                          href={log.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="icon-btn w-5 h-5"
+                          aria-label="Open problem link"
+                        >
                           <ExternalLink size={11} />
                         </a>
                       )}
@@ -125,20 +166,22 @@ export default function LeetcodePage() {
                       {fmt(log.date)} {log.topic ? `· ${log.topic}` : ""}
                     </p>
                   </div>
-                </div>
-                <button
-                  onClick={() => handleDelete(log.id)}
-                  className="icon-btn opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
-                >
-                  <Trash2 size={14} />
                 </button>
+                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity shrink-0">
+                  <button onClick={() => openEdit(log)} className="icon-btn" aria-label={`Edit ${log.problem_name}`}>
+                    <Pencil size={14} />
+                  </button>
+                  <button onClick={() => requestDelete(log)} className="icon-btn" aria-label={`Delete ${log.problem_name}`}>
+                    <Trash2 size={14} />
+                  </button>
+                </div>
               </li>
             ))}
           </ul>
         )}
       </div>
 
-      <Modal open={open} onClose={() => setOpen(false)} title="Log a problem">
+      <Modal open={open} onClose={() => setOpen(false)} title={editing ? "Edit problem" : "Log a problem"}>
         <form onSubmit={handleSubmit} className="flex flex-col gap-3">
           <div className="flex flex-col gap-1.5">
             <label className="label">Problem name</label>
@@ -199,7 +242,7 @@ export default function LeetcodePage() {
             </p>
           )}
           <button type="submit" disabled={saving || !form.problem_name} className="btn btn-primary mt-1 disabled:opacity-50">
-            {saving ? "Saving…" : "Save problem"}
+            {saving ? "Saving…" : editing ? "Save changes" : "Save problem"}
           </button>
         </form>
       </Modal>

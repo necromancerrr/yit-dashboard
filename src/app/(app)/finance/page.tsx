@@ -2,8 +2,9 @@
 
 import { useMemo, useState } from "react";
 import useSWR from "swr";
-import { Wallet, Plus, Trash2, ArrowDownRight, ArrowUpRight } from "lucide-react";
-import { fetcher, apiPost, apiDelete } from "@/lib/fetcher";
+import { Wallet, Plus, Trash2, ArrowDownRight, ArrowUpRight, Pencil } from "lucide-react";
+import { fetcher, apiPost, apiPatch } from "@/lib/fetcher";
+import { useUndoableDelete } from "@/lib/useUndoableDelete";
 import { PageHeader } from "@/components/PageHeader";
 import { EmptyState } from "@/components/EmptyState";
 import { Modal } from "@/components/Modal";
@@ -24,20 +25,22 @@ function currency(n: number) {
   return n.toLocaleString(undefined, { style: "currency", currency: "USD" });
 }
 
+const emptyForm = { date: todayISO(), type: "expense" as "income" | "expense", category: "Groceries", amount: "", note: "" };
+
 export default function FinancePage() {
   const { data, isLoading, mutate } = useSWR<{ items: FinanceTransaction[] }>("/api/finance", fetcher);
   const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState<FinanceTransaction | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [form, setForm] = useState({
-    date: todayISO(),
-    type: "expense" as "income" | "expense",
-    category: "Groceries",
-    amount: "",
-    note: "",
-  });
+  const [form, setForm] = useState(emptyForm);
 
-  const items = useMemo(() => data?.items ?? [], [data]);
+  const allItems = data?.items ?? [];
+  const { visibleItems: items, requestDelete } = useUndoableDelete(allItems, {
+    deleteUrl: (item) => `/api/finance/${item.id}`,
+    label: (item) => `${item.category} · ${currency(item.amount)}`,
+    onCommitted: () => mutate(),
+  });
 
   const { income, expense, byCategory } = useMemo(() => {
     let income = 0;
@@ -56,31 +59,44 @@ export default function FinancePage() {
 
   const maxCategory = byCategory.length ? byCategory[0][1] : 0;
 
+  function openAdd() {
+    setEditing(null);
+    setForm(emptyForm);
+    setError(null);
+    setOpen(true);
+  }
+
+  function openEdit(t: FinanceTransaction) {
+    setEditing(t);
+    setForm({ date: t.date, type: t.type, category: t.category, amount: t.amount.toString(), note: t.note ?? "" });
+    setError(null);
+    setOpen(true);
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
     setError(null);
+    const payload = {
+      date: form.date,
+      type: form.type,
+      category: form.category,
+      amount: Number(form.amount),
+      note: form.note || null,
+    };
     try {
-      await apiPost("/api/finance", {
-        date: form.date,
-        type: form.type,
-        category: form.category,
-        amount: Number(form.amount),
-        note: form.note || null,
-      });
+      if (editing) {
+        await apiPatch(`/api/finance/${editing.id}`, payload);
+      } else {
+        await apiPost("/api/finance", payload);
+      }
       setOpen(false);
-      setForm({ date: todayISO(), type: "expense", category: "Groceries", amount: "", note: "" });
       mutate();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save");
     } finally {
       setSaving(false);
     }
-  }
-
-  async function handleDelete(id: number) {
-    await apiDelete(`/api/finance/${id}`);
-    mutate();
   }
 
   const categories = form.type === "income" ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
@@ -91,7 +107,7 @@ export default function FinancePage() {
         title="Money"
         subtitle="Income, spending, and where it's going"
         action={
-          <button className="btn btn-primary" onClick={() => setOpen(true)}>
+          <button className="btn btn-primary" onClick={openAdd}>
             <Plus size={15} /> Add transaction
           </button>
         }
@@ -165,7 +181,11 @@ export default function FinancePage() {
           <ul className="divide-y" style={{ borderColor: "var(--border)" }}>
             {items.map((t) => (
               <li key={t.id} className="flex items-center justify-between gap-3 px-4 py-3 group">
-                <div className="flex items-center gap-3 min-w-0">
+                <button
+                  onClick={() => openEdit(t)}
+                  className="flex items-center gap-3 min-w-0 text-left flex-1"
+                  aria-label={`Edit ${t.category} transaction`}
+                >
                   <div
                     className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
                     style={{
@@ -189,8 +209,8 @@ export default function FinancePage() {
                       {fmt(t.date)}
                     </p>
                   </div>
-                </div>
-                <div className="flex items-center gap-3 shrink-0">
+                </button>
+                <div className="flex items-center gap-2 shrink-0">
                   <span
                     className="text-sm font-medium"
                     style={{ fontVariantNumeric: "tabular-nums", color: t.type === "income" ? "var(--good)" : "var(--ink-primary)" }}
@@ -198,12 +218,14 @@ export default function FinancePage() {
                     {t.type === "income" ? "+" : "-"}
                     {currency(t.amount)}
                   </span>
-                  <button
-                    onClick={() => handleDelete(t.id)}
-                    className="icon-btn opacity-0 group-hover:opacity-100 transition-opacity"
-                  >
-                    <Trash2 size={14} />
-                  </button>
+                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+                    <button onClick={() => openEdit(t)} className="icon-btn" aria-label={`Edit ${t.category} transaction`}>
+                      <Pencil size={14} />
+                    </button>
+                    <button onClick={() => requestDelete(t)} className="icon-btn" aria-label={`Delete ${t.category} transaction`}>
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
                 </div>
               </li>
             ))}
@@ -211,7 +233,7 @@ export default function FinancePage() {
         )}
       </div>
 
-      <Modal open={open} onClose={() => setOpen(false)} title="Add a transaction">
+      <Modal open={open} onClose={() => setOpen(false)} title={editing ? "Edit transaction" : "Add a transaction"}>
         <form onSubmit={handleSubmit} className="flex flex-col gap-3">
           <div className="grid grid-cols-2 gap-2">
             {(["expense", "income"] as const).map((t) => (
@@ -274,7 +296,7 @@ export default function FinancePage() {
             </p>
           )}
           <button type="submit" disabled={saving || !form.amount} className="btn btn-primary mt-1 disabled:opacity-50">
-            {saving ? "Saving…" : "Save transaction"}
+            {saving ? "Saving…" : editing ? "Save changes" : "Save transaction"}
           </button>
         </form>
       </Modal>

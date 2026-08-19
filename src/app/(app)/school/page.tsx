@@ -2,8 +2,9 @@
 
 import { useState } from "react";
 import useSWR from "swr";
-import { GraduationCap, Plus, Trash2 } from "lucide-react";
-import { fetcher, apiPost, apiPatch, apiDelete } from "@/lib/fetcher";
+import { GraduationCap, Plus, Trash2, Pencil } from "lucide-react";
+import { fetcher, apiPost, apiPatch } from "@/lib/fetcher";
+import { useUndoableDelete } from "@/lib/useUndoableDelete";
 import { PageHeader } from "@/components/PageHeader";
 import { EmptyState } from "@/components/EmptyState";
 import { Modal } from "@/components/Modal";
@@ -27,26 +28,54 @@ function isOverdue(iso: string | null, status: string) {
   return iso < new Date().toISOString().slice(0, 10);
 }
 
+const emptyForm = { course: "", title: "", due_date: "", notes: "" };
+
 export default function SchoolPage() {
   const { data, isLoading, mutate } = useSWR<{ items: SchoolTask[] }>("/api/school", fetcher);
   const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState<SchoolTask | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [form, setForm] = useState({ course: "", title: "", due_date: "", notes: "" });
+  const [form, setForm] = useState(emptyForm);
+
+  const allItems = data?.items ?? [];
+  const { visibleItems: items, requestDelete } = useUndoableDelete(allItems, {
+    deleteUrl: (item) => `/api/school/${item.id}`,
+    label: (item) => item.title,
+    onCommitted: () => mutate(),
+  });
+
+  function openAdd() {
+    setEditing(null);
+    setForm(emptyForm);
+    setError(null);
+    setOpen(true);
+  }
+
+  function openEdit(task: SchoolTask) {
+    setEditing(task);
+    setForm({ course: task.course, title: task.title, due_date: task.due_date ?? "", notes: task.notes ?? "" });
+    setError(null);
+    setOpen(true);
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
     setError(null);
+    const payload = {
+      course: form.course,
+      title: form.title,
+      due_date: form.due_date || null,
+      notes: form.notes || null,
+    };
     try {
-      await apiPost("/api/school", {
-        course: form.course,
-        title: form.title,
-        due_date: form.due_date || null,
-        notes: form.notes || null,
-      });
+      if (editing) {
+        await apiPatch(`/api/school/${editing.id}`, payload);
+      } else {
+        await apiPost("/api/school", payload);
+      }
       setOpen(false);
-      setForm({ course: "", title: "", due_date: "", notes: "" });
       mutate();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save");
@@ -60,20 +89,13 @@ export default function SchoolPage() {
     mutate();
   }
 
-  async function handleDelete(id: number) {
-    await apiDelete(`/api/school/${id}`);
-    mutate();
-  }
-
-  const items = data?.items ?? [];
-
   return (
     <div>
       <PageHeader
         title="School"
         subtitle="Assignments and deadlines across your courses"
         action={
-          <button className="btn btn-primary" onClick={() => setOpen(true)}>
+          <button className="btn btn-primary" onClick={openAdd}>
             <Plus size={15} /> Add task
           </button>
         }
@@ -92,7 +114,11 @@ export default function SchoolPage() {
               const overdue = isOverdue(task.due_date, task.status);
               return (
                 <li key={task.id} className="flex items-center justify-between gap-3 px-4 py-3 group">
-                  <div className="flex items-center gap-3 min-w-0">
+                  <button
+                    onClick={() => openEdit(task)}
+                    className="flex items-center gap-3 min-w-0 text-left flex-1"
+                    aria-label={`Edit ${task.title}`}
+                  >
                     <div
                       className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
                       style={{ background: "color-mix(in srgb, var(--cat-school) 16%, transparent)" }}
@@ -105,12 +131,13 @@ export default function SchoolPage() {
                         {task.course} · {fmt(task.due_date)} {overdue ? "· overdue" : ""}
                       </p>
                     </div>
-                  </div>
+                  </button>
                   <div className="flex items-center gap-2 shrink-0">
                     <select
                       value={task.status}
                       onChange={(e) => updateStatus(task.id, e.target.value)}
                       className="badge cursor-pointer"
+                      aria-label={`${task.title} status`}
                       style={{ color: STATUS_COLOR[task.status] }}
                     >
                       {STATUSES.map((s) => (
@@ -119,12 +146,14 @@ export default function SchoolPage() {
                         </option>
                       ))}
                     </select>
-                    <button
-                      onClick={() => handleDelete(task.id)}
-                      className="icon-btn opacity-0 group-hover:opacity-100 transition-opacity"
-                    >
-                      <Trash2 size={14} />
-                    </button>
+                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+                      <button onClick={() => openEdit(task)} className="icon-btn" aria-label={`Edit ${task.title}`}>
+                        <Pencil size={14} />
+                      </button>
+                      <button onClick={() => requestDelete(task)} className="icon-btn" aria-label={`Delete ${task.title}`}>
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
                   </div>
                 </li>
               );
@@ -133,7 +162,7 @@ export default function SchoolPage() {
         )}
       </div>
 
-      <Modal open={open} onClose={() => setOpen(false)} title="Add a task">
+      <Modal open={open} onClose={() => setOpen(false)} title={editing ? "Edit task" : "Add a task"}>
         <form onSubmit={handleSubmit} className="flex flex-col gap-3">
           <div className="flex flex-col gap-1.5">
             <label className="label">Course</label>
@@ -178,7 +207,7 @@ export default function SchoolPage() {
             </p>
           )}
           <button type="submit" disabled={saving || !form.course || !form.title} className="btn btn-primary mt-1 disabled:opacity-50">
-            {saving ? "Saving…" : "Save task"}
+            {saving ? "Saving…" : editing ? "Save changes" : "Save task"}
           </button>
         </form>
       </Modal>

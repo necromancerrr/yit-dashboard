@@ -2,8 +2,9 @@
 
 import { useState } from "react";
 import useSWR from "swr";
-import { Briefcase, Plus, Trash2 } from "lucide-react";
-import { fetcher, apiPost, apiPatch, apiDelete } from "@/lib/fetcher";
+import { Briefcase, Plus, Trash2, Pencil } from "lucide-react";
+import { fetcher, apiPost, apiPatch } from "@/lib/fetcher";
+import { useUndoableDelete } from "@/lib/useUndoableDelete";
 import { PageHeader } from "@/components/PageHeader";
 import { EmptyState } from "@/components/EmptyState";
 import { Modal } from "@/components/Modal";
@@ -26,27 +27,55 @@ function fmt(iso: string | null) {
   return new Date(iso + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 }
 
+const emptyForm = { company: "", role: "", stage: "Applied" as InterviewStage, date: "", notes: "" };
+
 export default function InterviewsPage() {
   const { data, isLoading, mutate } = useSWR<{ items: Interview[] }>("/api/interviews", fetcher);
   const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState<Interview | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [form, setForm] = useState({ company: "", role: "", stage: "Applied" as InterviewStage, date: "", notes: "" });
+  const [form, setForm] = useState(emptyForm);
+
+  const allItems = data?.items ?? [];
+  const { visibleItems: items, requestDelete } = useUndoableDelete(allItems, {
+    deleteUrl: (item) => `/api/interviews/${item.id}`,
+    label: (item) => item.company,
+    onCommitted: () => mutate(),
+  });
+
+  function openAdd() {
+    setEditing(null);
+    setForm(emptyForm);
+    setError(null);
+    setOpen(true);
+  }
+
+  function openEdit(iv: Interview) {
+    setEditing(iv);
+    setForm({ company: iv.company, role: iv.role ?? "", stage: iv.stage, date: iv.date ?? "", notes: iv.notes ?? "" });
+    setError(null);
+    setOpen(true);
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
     setError(null);
+    const payload = {
+      company: form.company,
+      role: form.role || null,
+      stage: form.stage,
+      date: form.date || null,
+      notes: form.notes || null,
+    };
     try {
-      await apiPost("/api/interviews", {
-        company: form.company,
-        role: form.role || null,
-        stage: form.stage,
-        date: form.date || null,
-        notes: form.notes || null,
-      });
+      if (editing) {
+        await apiPatch(`/api/interviews/${editing.id}`, payload);
+      } else {
+        await apiPost("/api/interviews", payload);
+      }
       setOpen(false);
-      setForm({ company: "", role: "", stage: "Applied", date: "", notes: "" });
       mutate();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save");
@@ -60,20 +89,13 @@ export default function InterviewsPage() {
     mutate();
   }
 
-  async function handleDelete(id: number) {
-    await apiDelete(`/api/interviews/${id}`);
-    mutate();
-  }
-
-  const items = data?.items ?? [];
-
   return (
     <div>
       <PageHeader
         title="Interviews"
         subtitle="Track every application through to offer"
         action={
-          <button className="btn btn-primary" onClick={() => setOpen(true)}>
+          <button className="btn btn-primary" onClick={openAdd}>
             <Plus size={15} /> Add interview
           </button>
         }
@@ -90,7 +112,11 @@ export default function InterviewsPage() {
           <ul className="divide-y" style={{ borderColor: "var(--border)" }}>
             {items.map((iv) => (
               <li key={iv.id} className="flex items-center justify-between gap-3 px-4 py-3 group">
-                <div className="flex items-center gap-3 min-w-0">
+                <button
+                  onClick={() => openEdit(iv)}
+                  className="flex items-center gap-3 min-w-0 text-left flex-1"
+                  aria-label={`Edit ${iv.company}`}
+                >
                   <div
                     className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
                     style={{ background: "color-mix(in srgb, var(--cat-interviews) 16%, transparent)" }}
@@ -105,12 +131,13 @@ export default function InterviewsPage() {
                       {fmt(iv.date)}
                     </p>
                   </div>
-                </div>
+                </button>
                 <div className="flex items-center gap-2 shrink-0">
                   <select
                     value={iv.stage}
                     onChange={(e) => updateStage(iv.id, e.target.value)}
                     className="badge cursor-pointer"
+                    aria-label={`${iv.company} stage`}
                     style={{ color: STAGE_COLOR[iv.stage], borderColor: "var(--border-strong)" }}
                   >
                     {STAGES.map((s) => (
@@ -119,12 +146,14 @@ export default function InterviewsPage() {
                       </option>
                     ))}
                   </select>
-                  <button
-                    onClick={() => handleDelete(iv.id)}
-                    className="icon-btn opacity-0 group-hover:opacity-100 transition-opacity"
-                  >
-                    <Trash2 size={14} />
-                  </button>
+                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+                    <button onClick={() => openEdit(iv)} className="icon-btn" aria-label={`Edit ${iv.company}`}>
+                      <Pencil size={14} />
+                    </button>
+                    <button onClick={() => requestDelete(iv)} className="icon-btn" aria-label={`Delete ${iv.company}`}>
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
                 </div>
               </li>
             ))}
@@ -132,7 +161,7 @@ export default function InterviewsPage() {
         )}
       </div>
 
-      <Modal open={open} onClose={() => setOpen(false)} title="Add an interview">
+      <Modal open={open} onClose={() => setOpen(false)} title={editing ? "Edit interview" : "Add an interview"}>
         <form onSubmit={handleSubmit} className="flex flex-col gap-3">
           <div className="flex flex-col gap-1.5">
             <label className="label">Company</label>
@@ -194,7 +223,7 @@ export default function InterviewsPage() {
             </p>
           )}
           <button type="submit" disabled={saving || !form.company} className="btn btn-primary mt-1 disabled:opacity-50">
-            {saving ? "Saving…" : "Save interview"}
+            {saving ? "Saving…" : editing ? "Save changes" : "Save interview"}
           </button>
         </form>
       </Modal>

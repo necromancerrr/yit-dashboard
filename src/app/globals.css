@@ -3,21 +3,26 @@
 :root {
   color-scheme: dark;
 
-  /* Chrome & ink — dark reference palette */
-  --page: #0d0d0d;
-  --surface: #17181a;
-  --surface-raised: #1d1f22;
-  --border: rgba(255, 255, 255, 0.08);
-  --border-strong: rgba(255, 255, 255, 0.14);
+  /* Chrome & ink — Refined Dark: deeper contrast than a flat black */
+  --page: #0a0a0c;
+  --surface: #15161a;
+  --surface-raised: #1b1d22;
+  --border: rgba(255, 255, 255, 0.07);
+  --border-strong: rgba(255, 255, 255, 0.13);
   --ink-primary: #ffffff;
-  --ink-secondary: #c3c2b7;
-  --ink-muted: #898781;
+  --ink-secondary: #c2c3cc;
+  --ink-muted: #84868f;
   --gridline: #2c2c2a;
 
-  /* Accent (sequential hue: blue) */
+  /* Accent (sequential hue: blue) + a personal signature (violet) for the
+     monogram/gradient — both are validated categorical slots already used
+     elsewhere in the app, not invented one-off colors. */
   --accent: #3987e5;
   --accent-strong: #5598e7;
   --accent-soft: rgba(57, 135, 229, 0.14);
+  --accent-2: #9085e9;
+  --brand-gradient: linear-gradient(135deg, var(--accent), var(--accent-2));
+  --focus-ring: #6ea5ee;
 
   /* Status */
   --good: #0ca30c;
@@ -33,13 +38,14 @@
   --cat-interviews: #d55181; /* magenta */
   --cat-checklist: #9085e9; /* violet */
 
-  /* Heatmap ramp (blue, dark-surface oriented: dim -> bright = low -> high) */
-  --heat-0: #1d1f22;
-  --heat-1: #184f95;
-  --heat-2: #1c5cab;
-  --heat-3: #256abf;
-  --heat-4: #2a78d6;
-  --heat-5: #3987e5;
+  /* Heatmap ramp: dim -> bright = low -> high, warming from blue into the
+     signature violet at peak activity so a great week actually looks like one. */
+  --heat-0: #1b1d22;
+  --heat-1: #2b3f78;
+  --heat-2: #3a54a8;
+  --heat-3: #4c6cd6;
+  --heat-4: #6785ee;
+  --heat-5: #8b6ef5;
 }
 
 @theme inline {
@@ -75,6 +81,14 @@ body {
 
 ::selection {
   background: var(--accent-soft);
+}
+
+/* Visible keyboard focus everywhere — mouse users don't see it, keyboard
+   and screen-reader users always do. */
+:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: 4px;
 }
 
 /* Scrollbar: minimal */
@@ -215,4 +229,18 @@ body {
 }
 .animate-fade-in {
   animation: fade-in 180ms ease both;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+.animate-toast-in {
+  animation: toast-in 200ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }

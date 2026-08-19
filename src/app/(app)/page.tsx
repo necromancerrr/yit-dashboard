@@ -7,6 +7,7 @@ import { StatCard } from "@/components/StatCard";
 import { PageHeader } from "@/components/PageHeader";
 import { Heatmap } from "@/components/Heatmap";
 import type { SummaryData } from "@/lib/types";
+import { getDisplayName } from "@/lib/identity";
 
 function currency(n: number): string {
   return n.toLocaleString(undefined, { style: "currency", currency: "USD", maximumFractionDigits: 0 });
@@ -27,7 +28,7 @@ export default function OverviewPage() {
   return (
     <div>
       <PageHeader
-        title={`${greeting()}, Yit`}
+        title={`${greeting()}, ${getDisplayName()}`}
         subtitle={new Date().toLocaleDateString(undefined, {
           weekday: "long",
           month: "long",

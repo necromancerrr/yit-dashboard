@@ -2,7 +2,9 @@
 
 import { useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { LayoutDashboard, Lock } from "lucide-react";
+import { Lock } from "lucide-react";
+import { Logo } from "@/components/Logo";
+import { getBrandName } from "@/lib/identity";
 
 function LoginForm() {
   const router = useRouter();
@@ -40,10 +42,10 @@ function LoginForm() {
     <div className="min-h-screen flex items-center justify-center px-4">
       <div className="w-full max-w-sm animate-fade-in">
         <div className="flex flex-col items-center mb-8">
-          <div className="w-11 h-11 rounded-xl bg-accent/15 flex items-center justify-center mb-4" style={{ background: "var(--accent-soft)" }}>
-            <LayoutDashboard size={20} color="var(--accent)" />
+          <div className="mb-4">
+            <Logo size="lg" />
           </div>
-          <h1 className="text-lg font-semibold">Yit&apos;s Dashboard</h1>
+          <h1 className="text-lg font-semibold">{getBrandName()}</h1>
           <p className="text-sm text-ink-muted mt-1" style={{ color: "var(--ink-muted)" }}>
             Sign in to continue
           </p>

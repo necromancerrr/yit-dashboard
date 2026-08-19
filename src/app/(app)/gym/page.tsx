@@ -2,8 +2,9 @@
 
 import { useState } from "react";
 import useSWR from "swr";
-import { Dumbbell, Plus, Trash2, Clock } from "lucide-react";
-import { fetcher, apiPost, apiDelete } from "@/lib/fetcher";
+import { Dumbbell, Plus, Trash2, Clock, Pencil } from "lucide-react";
+import { fetcher, apiPost, apiPatch } from "@/lib/fetcher";
+import { useUndoableDelete } from "@/lib/useUndoableDelete";
 import { PageHeader } from "@/components/PageHeader";
 import { EmptyState } from "@/components/EmptyState";
 import { Modal } from "@/components/Modal";
@@ -19,26 +20,59 @@ function fmt(iso: string) {
   return new Date(iso + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric", weekday: "short" });
 }
 
+const emptyForm = { date: todayISO(), workout_type: "Push", duration_min: "", notes: "" };
+
 export default function GymPage() {
   const { data, isLoading, mutate } = useSWR<{ items: GymLog[] }>("/api/gym", fetcher);
   const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState<GymLog | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [form, setForm] = useState({ date: todayISO(), workout_type: "Push", duration_min: "", notes: "" });
+  const [form, setForm] = useState(emptyForm);
+
+  const allItems = data?.items ?? [];
+  const { visibleItems: items, requestDelete } = useUndoableDelete(allItems, {
+    deleteUrl: (item) => `/api/gym/${item.id}`,
+    label: (item) => item.workout_type,
+    onCommitted: () => mutate(),
+  });
+
+  function openAdd() {
+    setEditing(null);
+    setForm(emptyForm);
+    setError(null);
+    setOpen(true);
+  }
+
+  function openEdit(log: GymLog) {
+    setEditing(log);
+    setForm({
+      date: log.date,
+      workout_type: log.workout_type,
+      duration_min: log.duration_min?.toString() ?? "",
+      notes: log.notes ?? "",
+    });
+    setError(null);
+    setOpen(true);
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
     setError(null);
+    const payload = {
+      date: form.date,
+      workout_type: form.workout_type,
+      duration_min: form.duration_min ? Number(form.duration_min) : null,
+      notes: form.notes || null,
+    };
     try {
-      await apiPost("/api/gym", {
-        date: form.date,
-        workout_type: form.workout_type,
-        duration_min: form.duration_min ? Number(form.duration_min) : null,
-        notes: form.notes || null,
-      });
+      if (editing) {
+        await apiPatch(`/api/gym/${editing.id}`, payload);
+      } else {
+        await apiPost("/api/gym", payload);
+      }
       setOpen(false);
-      setForm({ date: todayISO(), workout_type: "Push", duration_min: "", notes: "" });
       mutate();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save");
@@ -47,20 +81,13 @@ export default function GymPage() {
     }
   }
 
-  async function handleDelete(id: number) {
-    await apiDelete(`/api/gym/${id}`);
-    mutate();
-  }
-
-  const items = data?.items ?? [];
-
   return (
     <div>
       <PageHeader
         title="Gym"
         subtitle="Log workouts and keep your streak alive"
         action={
-          <button className="btn btn-primary" onClick={() => setOpen(true)}>
+          <button className="btn btn-primary" onClick={openAdd}>
             <Plus size={15} /> Log workout
           </button>
         }
@@ -77,7 +104,11 @@ export default function GymPage() {
           <ul className="divide-y" style={{ borderColor: "var(--border)" }}>
             {items.map((log) => (
               <li key={log.id} className="flex items-center justify-between gap-3 px-4 py-3 group">
-                <div className="flex items-center gap-3 min-w-0">
+                <button
+                  onClick={() => openEdit(log)}
+                  className="flex items-center gap-3 min-w-0 text-left flex-1"
+                  aria-label={`Edit ${log.workout_type} on ${fmt(log.date)}`}
+                >
                   <div
                     className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
                     style={{ background: "color-mix(in srgb, var(--cat-gym) 16%, transparent)" }}
@@ -97,20 +128,22 @@ export default function GymPage() {
                       {log.notes ? <span className="truncate">· {log.notes}</span> : null}
                     </p>
                   </div>
-                </div>
-                <button
-                  onClick={() => handleDelete(log.id)}
-                  className="icon-btn opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
-                >
-                  <Trash2 size={14} />
                 </button>
+                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity shrink-0">
+                  <button onClick={() => openEdit(log)} className="icon-btn" aria-label={`Edit ${log.workout_type}`}>
+                    <Pencil size={14} />
+                  </button>
+                  <button onClick={() => requestDelete(log)} className="icon-btn" aria-label={`Delete ${log.workout_type}`}>
+                    <Trash2 size={14} />
+                  </button>
+                </div>
               </li>
             ))}
           </ul>
         )}
       </div>
 
-      <Modal open={open} onClose={() => setOpen(false)} title="Log a workout">
+      <Modal open={open} onClose={() => setOpen(false)} title={editing ? "Edit workout" : "Log a workout"}>
         <form onSubmit={handleSubmit} className="flex flex-col gap-3">
           <div className="grid grid-cols-2 gap-3">
             <div className="flex flex-col gap-1.5">
@@ -164,7 +197,7 @@ export default function GymPage() {
             </p>
           )}
           <button type="submit" disabled={saving} className="btn btn-primary mt-1 disabled:opacity-50">
-            {saving ? "Saving…" : "Save workout"}
+            {saving ? "Saving…" : editing ? "Save changes" : "Save workout"}
           </button>
         </form>
       </Modal>
