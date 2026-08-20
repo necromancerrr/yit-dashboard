@@ -7,6 +7,18 @@ const DEFAULT_LOCAL_PATH = path.join(process.cwd(), "db", "local.db");
 function resolveUrl(): string {
   const url = process.env.DATABASE_URL;
   if (url && url.length > 0) return url;
+  // Serverless platforms have an ephemeral, largely read-only filesystem, so
+  // the local-file fallback below can't work there: mkdirSync either throws
+  // EROFS or "succeeds" into a sandbox that's discarded between invocations,
+  // silently losing every write. Fail loudly with the actual fix instead.
+  if (process.env.VERCEL) {
+    throw new Error(
+      "DATABASE_URL is not set. Vercel's filesystem is ephemeral, so the local " +
+        "SQLite fallback can't be used here — point DATABASE_URL at a hosted " +
+        "libSQL/Turso database (and set DATABASE_AUTH_TOKEN) in the project's " +
+        "Environment Variables, then redeploy."
+    );
+  }
   // Local/self-hosted fallback: a plain file next to the project.
   const dir = path.dirname(DEFAULT_LOCAL_PATH);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
