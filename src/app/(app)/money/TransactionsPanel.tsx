@@ -5,7 +5,6 @@ import useSWR from "swr";
 import { Wallet, Plus, Trash2, ArrowDownRight, ArrowUpRight, Pencil } from "lucide-react";
 import { fetcher, apiPost, apiPatch } from "@/lib/fetcher";
 import { useUndoableDelete } from "@/lib/useUndoableDelete";
-import { PageHeader } from "@/components/PageHeader";
 import { EmptyState } from "@/components/EmptyState";
 import { Modal } from "@/components/Modal";
 import { parseISODate, todayISO } from "@/lib/date";
@@ -24,7 +23,7 @@ function currency(n: number) {
 
 const emptyForm = { date: todayISO(), type: "expense" as "income" | "expense", category: "Groceries", amount: "", note: "" };
 
-export default function FinancePage() {
+export function TransactionsPanel() {
   const { data, isLoading, mutate } = useSWR<{ items: FinanceTransaction[] }>("/api/finance", fetcher);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<FinanceTransaction | null>(null);
@@ -100,15 +99,11 @@ export default function FinancePage() {
 
   return (
     <div>
-      <PageHeader
-        title="Money"
-        subtitle="Income, spending, and where it's going"
-        action={
-          <button className="btn btn-primary" onClick={openAdd}>
-            <Plus size={15} /> Add transaction
-          </button>
-        }
-      />
+      <div className="flex justify-end mb-4">
+        <button className="btn btn-primary" onClick={openAdd}>
+          <Plus size={15} /> Add transaction
+        </button>
+      </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 mb-4">
         <div className="card p-4">

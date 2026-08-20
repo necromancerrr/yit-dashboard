@@ -5,7 +5,6 @@ import useSWR from "swr";
 import { Bitcoin, Plus, Trash2, Pencil, ScanLine, AlertTriangle, Lock } from "lucide-react";
 import { fetcher, apiPost, apiPatch } from "@/lib/fetcher";
 import { useUndoableDelete } from "@/lib/useUndoableDelete";
-import { PageHeader } from "@/components/PageHeader";
 import { EmptyState } from "@/components/EmptyState";
 import { Modal } from "@/components/Modal";
 import type { CryptoHoldingWithPrice } from "@/lib/types";
@@ -30,7 +29,7 @@ const qty = (n: number) =>
 
 const emptyForm = { symbol: "", name: "", quantity: "", staked_pct: "", notes: "" };
 
-export default function CryptoPage() {
+export function CryptoPanel() {
   const { data, isLoading, mutate } = useSWR<{
     items: CryptoHoldingWithPrice[];
     totalValue: number;
@@ -158,24 +157,18 @@ export default function CryptoPage() {
 
   return (
     <div>
-      <PageHeader
-        title="Crypto"
-        subtitle="Holdings valued at live prices"
-        action={
-          <div className="flex gap-2">
-            <button
-              className="btn btn-ghost"
-              onClick={() => fileInput.current?.click()}
-              disabled={scanning}
-            >
-              <ScanLine size={15} /> {scanning ? "Reading…" : "Scan"}
-            </button>
-            <button className="btn btn-primary" onClick={openAdd}>
-              <Plus size={15} /> Add
-            </button>
-          </div>
-        }
-      />
+      <div className="flex justify-end gap-2 mb-4">
+        <button
+          className="btn btn-ghost"
+          onClick={() => fileInput.current?.click()}
+          disabled={scanning}
+        >
+          <ScanLine size={15} /> {scanning ? "Reading…" : "Scan"}
+        </button>
+        <button className="btn btn-primary" onClick={openAdd}>
+          <Plus size={15} /> Add holding
+        </button>
+      </div>
 
       <input
         ref={fileInput}

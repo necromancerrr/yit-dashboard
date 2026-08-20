@@ -133,6 +133,48 @@ password once, go to **Security → Add this device**, and after that you can
 sign in with Face ID / Touch ID / your fingerprint. Keep the password safe: it
 is the way back in if you lose every registered device.
 
+All four variables are required. `DATABASE_URL` in particular is not optional
+on Vercel — without it the build fails on purpose (see `src/lib/db.ts`) rather
+than falling back to a local SQLite file that the serverless filesystem would
+throw away between requests.
+
+#### Deploying from the command line
+
+If you'd rather not click through the dashboard, the same thing from a
+terminal — run this from the repo root, on a machine that's logged into
+Vercel:
+
+```bash
+npm i -g vercel
+vercel login
+vercel link                      # create/attach the project
+
+# one line per secret; paste the value when prompted
+vercel env add DATABASE_URL production
+vercel env add DATABASE_AUTH_TOKEN production
+vercel env add AUTH_SECRET production        # openssl rand -base64 32
+vercel env add APP_PASSWORD_HASH production  # node scripts/hash-password.mjs "your password"
+
+vercel --prod
+```
+
+Repeat the `env add` lines with `preview` instead of `production` if you also
+want preview deployments (branch pushes) to work — they get a separate
+environment and will otherwise fail the build on the missing `DATABASE_URL`.
+
+#### If the deploy still fails
+
+- **Build error mentioning `DATABASE_URL`** — the variable isn't set for the
+  environment being built. Check `vercel env ls`; note that Preview and
+  Production are separate.
+- **`AUTH_SECRET env var must be set...`** — same cause, for `AUTH_SECRET`.
+  It has to be at least 16 characters.
+- **Login page rejects your password** — `APP_PASSWORD_HASH` takes precedence
+  over `APP_PASSWORD`. If both are set, only the hash is checked.
+- **Environment variables changed but nothing improved** — Vercel bakes env
+  vars in at build time, so you need a fresh deploy (`vercel --prod`, or
+  "Redeploy" in the dashboard) after editing them.
+
 ## Pushing this to GitHub
 
 This project is already a git repo with an initial commit. To publish it:

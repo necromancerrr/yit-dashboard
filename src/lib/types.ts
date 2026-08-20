@@ -124,3 +124,134 @@ export interface SummaryData {
   checklistTotalToday: number;
   heatmap: HeatmapDay[];
 }
+
+// ---------------------------------------------------------------------------
+// Career
+// ---------------------------------------------------------------------------
+
+export type ApplicationStatus =
+  | "Applied"
+  | "OA"
+  | "Phone Screen"
+  | "Technical"
+  | "Onsite"
+  | "Offer"
+  | "Rejected"
+  | "Withdrawn";
+
+export interface Application {
+  id: number;
+  company: string;
+  role: string | null;
+  /** Cached projection of application_events — written only by applyEvent(). */
+  status: ApplicationStatus;
+  applied_date: string | null;
+  next_action_date: string | null;
+  next_action_label: string | null;
+  location: string | null;
+  url: string | null;
+  notes: string | null;
+  source: string;
+  /**
+   * 1 once you have changed the status by hand. A record that you did, not a
+   * gate: precedence over inference is decided from the event log's dates, so
+   * touching an application never switches its automation off permanently.
+   */
+  status_locked: 0 | 1;
+  last_activity_date: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApplicationEvent {
+  id: number;
+  application_id: number;
+  kind: "created" | "status_change" | "note" | "deadline";
+  from_status: string | null;
+  to_status: string | null;
+  occurred_on: string;
+  detail: string | null;
+  source: string;
+  external_event_id: number | null;
+  confidence: number | null;
+  created_at: string;
+}
+
+// ---------------------------------------------------------------------------
+// Ingestion + Inbox
+// ---------------------------------------------------------------------------
+
+export interface Integration {
+  id: number;
+  provider: string;
+  status: "disconnected" | "connected" | "error";
+  account_label: string | null;
+  cursor: string | null;
+  last_synced_at: string | null;
+  last_error: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ExternalEvent {
+  id: number;
+  integration_id: number | null;
+  provider: string;
+  provider_message_id: string;
+  thread_id: string | null;
+  occurred_at: string | null;
+  subject: string | null;
+  sender: string | null;
+  snippet: string | null;
+  processing_status: "pending" | "processed" | "ignored" | "failed";
+  classification: string | null;
+  confidence: number | null;
+  error: string | null;
+  ingested_at: string;
+  processed_at: string | null;
+}
+
+export interface InboxItem {
+  id: number;
+  kind: string;
+  title: string;
+  detail: string | null;
+  severity: "info" | "attention" | "urgent";
+  application_id: number | null;
+  external_event_id: number | null;
+  proposed_status: string | null;
+  confidence: number | null;
+  state: "open" | "confirmed" | "dismissed";
+  dedupe_key: string;
+  created_at: string;
+  resolved_at: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// Today
+// ---------------------------------------------------------------------------
+
+/** One thing competing for attention today, already ranked by the server. */
+export interface TodayItem {
+  id: string;
+  kind: "school" | "career" | "checklist" | "money" | "habit";
+  title: string;
+  detail: string | null;
+  /** Lower sorts first. Computed server-side so every surface agrees. */
+  urgency: number;
+  dueDate: string | null;
+  href: string;
+}
+
+export interface TodayData {
+  date: string;
+  items: TodayItem[];
+  inboxOpenCount: number;
+  gymStreak: number;
+  checklistDoneToday: number;
+  checklistTotalToday: number;
+  monthNet: number;
+  netWorthSnapshot: number;
+  /** Null unless an AI provider is configured — the page never depends on it. */
+  briefing: string | null;
+}
