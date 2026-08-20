@@ -10,6 +10,7 @@ import {
   GraduationCap,
   Wallet,
   CheckSquare,
+  Fingerprint,
   LogOut,
   Download,
 } from "lucide-react";
@@ -24,6 +25,7 @@ const NAV_ITEMS = [
   { href: "/school", label: "School", icon: GraduationCap },
   { href: "/finance", label: "Money", icon: Wallet },
   { href: "/checklist", label: "Checklist", icon: CheckSquare },
+  { href: "/security", label: "Security", icon: Fingerprint },
 ];
 
 export function Nav() {

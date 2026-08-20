@@ -1,7 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { SESSION_COOKIE, verifySessionToken } from "@/lib/auth";
 
-const PUBLIC_PATHS = ["/login", "/api/auth/login", "/manifest.webmanifest"];
+// Exact paths only, never a prefix. A prefix like "/api/auth/passkey" would
+// also expose the *registration* routes, letting anyone who can reach the login
+// page enrol their own fingerprint and walk in. Only the two steps of the
+// sign-in ceremony belong here — enrolling a device still requires a session.
+const PUBLIC_PATHS = [
+  "/login",
+  "/api/auth/login",
+  "/api/auth/passkey/login/options",
+  "/api/auth/passkey/login/verify",
+  "/manifest.webmanifest",
+];
 // Next.js's generated icon/manifest routes — browsers and "add to home
 // screen" fetch these before (and regardless of) auth, so they can't be
 // gated behind the login redirect the way the rest of the app is.

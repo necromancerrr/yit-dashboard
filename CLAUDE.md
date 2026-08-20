@@ -54,8 +54,10 @@ src/
       layout.tsx
       page.tsx            # overview — stat cards + heatmap, reads /api/summary
       gym/ leetcode/ interviews/ school/ finance/ checklist/   # one page.tsx each
+      security/             # manage passkeys (WebAuthn devices)
     api/
       auth/login  auth/logout
+      auth/passkey/         # WebAuthn: login/ + register/ ceremonies, list, delete
       gym/ leetcode/ interviews/ school/ finance/ checklist/   # route.ts + [id]/route.ts
       summary/route.ts    # aggregate numbers + heatmap for the overview
       export/route.ts     # every table as one downloadable JSON file
@@ -66,6 +68,8 @@ src/
     api-helpers.ts        # handleRoute / withDb / jsonError / todayISO
     date.ts               # local-calendar date helpers — use these, never toISOString()
     checklist.ts          # daily rollover for recurring habits
+    webauthn.ts           # passkey relying-party + challenge cookie helpers
+    useWebAuthnSupport.ts # useSyncExternalStore probe for browser support
     fetcher.ts            # SWR fetcher + apiPost / apiPatch / apiDelete
     identity.ts           # display/brand name from NEXT_PUBLIC_DISPLAY_NAME
     types.ts              # row interfaces mirroring the SQL schema
@@ -90,6 +94,24 @@ path without updating `PUBLIC_PATHS`/`PUBLIC_PREFIXES` deliberately.
 `verifyPassword` prefers `APP_PASSWORD_HASH` (bcrypt) and falls back to plain
 `APP_PASSWORD`. `AUTH_SECRET` must be ≥16 chars or `getSecret()` throws.
 
+**Passkeys (WebAuthn).** A second way to mint the *same* `dash_session` cookie,
+so nothing downstream of the proxy knows passkeys exist. Each ceremony is two
+routes — options (issue a challenge) then verify (check the signature):
+
+- `/api/auth/passkey/login/{options,verify}` — **public**, listed by exact path
+  in `PUBLIC_PATHS`. Never widen this to a `/api/auth/passkey` prefix: that
+  would expose the register routes and let anyone enrol their own device.
+- `/api/auth/passkey/register/{options,verify}` — session-gated, so enrolling a
+  device requires already being signed in with the password.
+- `GET /api/auth/passkey` + `DELETE /api/auth/passkey/[id]` — manage devices;
+  the list deliberately omits `credential_id` and `public_key`.
+
+`src/lib/webauthn.ts` derives `rpID`/`origin` from the request (no env var to
+keep in sync across localhost, previews, and production) and holds the
+challenge in a 5-minute httpOnly cookie. Only public keys are stored; the
+counter is updated on each login for clone detection. Requires HTTPS in
+production — WebAuthn refuses to run on a plain LAN address.
+
 ### Database
 `src/lib/db.ts` exports a module-level `db` client cached on `globalThis` so
 dev hot-reloads don't open new connections. The whole schema lives in the
@@ -97,8 +119,8 @@ dev hot-reloads don't open new connections. The whole schema lives in the
 EXISTS` statements, split on `;` and executed once by `ensureDb()` (memoized on
 `globalThis.__dashboardDbReady`).
 
-Seven tables: `gym_logs`, `leetcode_logs`, `interviews`, `school_tasks`,
-`finance_transactions`, `checklist_items`, `checklist_completions`.
+Eight tables: `gym_logs`, `leetcode_logs`, `interviews`, `school_tasks`,
+`finance_transactions`, `checklist_items`, `checklist_completions`, `passkeys`.
 `snake_case` columns; dates are `TEXT` ISO `YYYY-MM-DD`; booleans are
 `INTEGER` 0/1.
 

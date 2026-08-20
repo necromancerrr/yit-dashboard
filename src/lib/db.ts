@@ -113,6 +113,22 @@ CREATE TABLE IF NOT EXISTS checklist_completions (
 );
 CREATE INDEX IF NOT EXISTS idx_checklist_completions_date ON checklist_completions(date);
 
+-- Registered passkeys (WebAuthn credentials) for biometric sign-in.
+-- Note what is NOT here: no fingerprint, no face data, no password. Only the
+-- PUBLIC half of a keypair whose private half never leaves the device. A dump
+-- of this table lets an attacker verify signatures, never create them.
+CREATE TABLE IF NOT EXISTS passkeys (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  credential_id TEXT NOT NULL UNIQUE,
+  public_key TEXT NOT NULL,
+  counter INTEGER NOT NULL DEFAULT 0,
+  transports TEXT,
+  label TEXT NOT NULL DEFAULT 'Device',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  last_used_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_passkeys_credential ON passkeys(credential_id);
+
 -- Backfill for databases created before the completions table existed: seed it
 -- from whatever done_date each item is currently carrying. Idempotent (the
 -- UNIQUE constraint plus OR IGNORE), so it is safe to re-run on every boot.
