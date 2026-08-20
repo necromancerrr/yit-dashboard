@@ -220,6 +220,9 @@ export interface InboxItem {
   application_id: number | null;
   external_event_id: number | null;
   proposed_status: string | null;
+  proposed_company: string | null;
+  proposed_role: string | null;
+  proposed_next_action_date: string | null;
   confidence: number | null;
   state: "open" | "confirmed" | "dismissed";
   dedupe_key: string;

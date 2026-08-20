@@ -3,7 +3,7 @@ import { applyEvent } from "@/lib/career";
 import { getAIProvider } from "@/lib/ai";
 import { classifyDeterministic, AUTO_APPLY_MIN_CONFIDENCE } from "@/lib/ingest/classify";
 import { matchApplication, type MatchCandidate } from "@/lib/ingest/match";
-import { truncateSnippet } from "@/lib/ingest/normalize";
+import { companyFromDomain, senderDomain, truncateSnippet } from "@/lib/ingest/normalize";
 import type { CareerSignal, IngestOutcome, NormalizedMessage } from "@/lib/ingest/types";
 import type { ApplicationStatus } from "@/lib/types";
 
@@ -16,9 +16,9 @@ import type { ApplicationStatus } from "@/lib/types";
  * rather than in the Gmail client — duplicates, forwards, repeated reminders
  * and ambiguous matches are properties of *mail*, not of one vendor.
  *
- * Nothing here ever creates an application. A message about a company you have
- * not applied to becomes an inbox item asking whether to add it; inferring new
- * rows from email would let a mis-parse invent a job you never applied for.
+ * Nothing here creates an application without confirmation. A message about a
+ * company that is not in Career becomes an Inbox item carrying the proposed
+ * company/status; confirming that item is the moment it becomes a row.
  */
 
 /** How much of a mailbox one sync will look at. */
@@ -27,6 +27,21 @@ export const SYNC_BATCH_LIMIT = 50;
 interface ProcessResult {
   outcome: "applied" | "proposed" | "ignored";
   detail: string;
+}
+
+function displayCompany(signalCompany: string | null, message: NormalizedMessage): string | null {
+  if (!signalCompany) return null;
+  const domainGuess = companyFromDomain(senderDomain(message.senderEmail));
+  const senderName = message.senderName?.trim();
+  if (
+    domainGuess === signalCompany &&
+    senderName &&
+    /^[\p{L}\p{N}&.' -]{2,60}$/u.test(senderName) &&
+    !/\b(?:recruiting|talent|careers?|jobs?|team|notifications?|no-?reply)\b/i.test(senderName)
+  ) {
+    return senderName;
+  }
+  return signalCompany;
 }
 
 /**
@@ -75,17 +90,25 @@ async function raiseInboxItem(params: {
   applicationId: number | null;
   externalEventId: number;
   proposedStatus: string | null;
+  proposedCompany?: string | null;
+  proposedRole?: string | null;
+  proposedNextActionDate?: string | null;
   confidence: number;
   dedupeKey: string;
 }): Promise<void> {
   await db.execute({
     sql: `INSERT INTO inbox_items
             (kind, title, detail, severity, application_id, external_event_id,
-             proposed_status, confidence, dedupe_key)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+             proposed_status, proposed_company, proposed_role, proposed_next_action_date,
+             confidence, dedupe_key)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(dedupe_key) DO UPDATE SET
             title = excluded.title,
             detail = excluded.detail,
+            proposed_status = excluded.proposed_status,
+            proposed_company = excluded.proposed_company,
+            proposed_role = excluded.proposed_role,
+            proposed_next_action_date = excluded.proposed_next_action_date,
             confidence = excluded.confidence`,
     args: [
       params.kind,
@@ -95,6 +118,9 @@ async function raiseInboxItem(params: {
       params.applicationId,
       params.externalEventId,
       params.proposedStatus,
+      params.proposedCompany ?? null,
+      params.proposedRole ?? null,
+      params.proposedNextActionDate ?? null,
       params.confidence,
       params.dedupeKey,
     ],
@@ -128,22 +154,30 @@ async function processMessage(
     message.threadId
   );
 
-  const label = [signal.company ?? "An employer", signal.role].filter(Boolean).join(" · ");
+  const proposedCompany = displayCompany(signal.company, message);
+  const label = [proposedCompany ?? signal.company ?? "An employer", signal.role]
+    .filter(Boolean)
+    .join(" · ");
 
   if (!match.applicationId) {
-    // Nothing to attach to. Both branches are questions for you, never writes:
-    // ambiguity is resolved by a person, and an unknown company might be an
-    // application you filed outside the dashboard.
+    // Nothing to attach to. Ambiguity is a question only you can answer. A
+    // single unknown company, though, is useful enough to become a "create this
+    // application?" proposal carrying the structured fields needed to seed
+    // Career after confirmation.
+    const canCreateApplication = !match.ambiguous && !!proposedCompany;
     await raiseInboxItem({
       kind: match.ambiguous ? "ambiguous_match" : "unmatched_career_email",
       title: match.ambiguous
         ? `Which ${signal.company} application is this about?`
-        : `${label} — ${signal.status}, but no matching application`,
+        : `Create ${label} as ${signal.status}?`,
       detail: `${message.subject} · ${match.reason}`,
       severity: "attention",
       applicationId: null,
       externalEventId,
-      proposedStatus: null,
+      proposedStatus: canCreateApplication ? signal.status : null,
+      proposedCompany: canCreateApplication ? proposedCompany : null,
+      proposedRole: canCreateApplication ? signal.role : null,
+      proposedNextActionDate: canCreateApplication ? signal.deadline : null,
       confidence: signal.confidence,
       // Keyed on the thread where there is one, so a reminder about the same
       // situation updates this item instead of stacking another.

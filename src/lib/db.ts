@@ -298,6 +298,9 @@ CREATE TABLE IF NOT EXISTS inbox_items (
   application_id INTEGER,
   external_event_id INTEGER,
   proposed_status TEXT,
+  proposed_company TEXT,
+  proposed_role TEXT,
+  proposed_next_action_date TEXT,
   confidence REAL,
   -- 'open' | 'confirmed' | 'dismissed'
   state TEXT NOT NULL DEFAULT 'open',
@@ -376,6 +379,18 @@ async function backfillApplicationsFromInterviews(): Promise<void> {
   }
 }
 
+async function ensureColumn(table: string, column: string, definition: string): Promise<void> {
+  const existing = await db.execute(`PRAGMA table_info(${table})`);
+  if (existing.rows.some((row) => row.name === column)) return;
+  await db.execute(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+}
+
+async function ensureInboxProposalColumns(): Promise<void> {
+  await ensureColumn("inbox_items", "proposed_company", "TEXT");
+  await ensureColumn("inbox_items", "proposed_role", "TEXT");
+  await ensureColumn("inbox_items", "proposed_next_action_date", "TEXT");
+}
+
 async function migrate(): Promise<void> {
   // Strip `--` line comments before splitting on `;`. Prose explaining a table
   // will eventually contain a semicolon, and a naive split would slice that
@@ -387,6 +402,7 @@ async function migrate(): Promise<void> {
   for (const statement of statements) {
     await db.execute(statement);
   }
+  await ensureInboxProposalColumns();
   await runOnce("2026-08-applications-from-interviews", backfillApplicationsFromInterviews);
 }
 
