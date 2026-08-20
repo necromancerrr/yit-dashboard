@@ -2,8 +2,9 @@
 
 import useSWR from "swr";
 import Link from "next/link";
-import { Inbox as InboxIcon, Check, X } from "lucide-react";
-import { fetcher, apiPatch } from "@/lib/fetcher";
+import { Inbox as InboxIcon, Check, X, RefreshCw } from "lucide-react";
+import { useState } from "react";
+import { fetcher, apiPatch, apiPost } from "@/lib/fetcher";
 import { PageHeader } from "@/components/PageHeader";
 import { EmptyState } from "@/components/EmptyState";
 import type { InboxItem } from "@/lib/types";
@@ -19,9 +20,45 @@ const SEVERITY_COLOR: Record<string, string> = {
   info: "var(--ink-muted)",
 };
 
+interface IntegrationRow {
+  provider: string;
+  configured: boolean;
+  status: string;
+  last_synced_at: string | null;
+  last_error: string | null;
+}
+
 export default function InboxPage() {
   const { data, isLoading, mutate } = useSWR<{ items: InboxRow[] }>("/api/inbox", fetcher);
+  const { data: integrations, mutate: mutateIntegrations } =
+    useSWR<{ items: IntegrationRow[] }>("/api/integrations", fetcher);
+  const [syncing, setSyncing] = useState(false);
+  const [syncNote, setSyncNote] = useState<string | null>(null);
+
   const items = data?.items ?? [];
+  const gmail = integrations?.items.find((i) => i.provider === "gmail");
+
+  async function sync() {
+    setSyncing(true);
+    setSyncNote(null);
+    try {
+      const res = await apiPost<{ ingested: number; applied: number; proposed: number; ignored: number }>(
+        "/api/ingest/sync",
+        {}
+      );
+      setSyncNote(
+        res.ingested === 0
+          ? "No new mail."
+          : `${res.ingested} new · ${res.applied} applied · ${res.proposed} to review · ${res.ignored} ignored`
+      );
+      mutate();
+      mutateIntegrations();
+    } catch (err) {
+      setSyncNote(err instanceof Error ? err.message : "Sync failed");
+    } finally {
+      setSyncing(false);
+    }
+  }
 
   async function resolve(item: InboxRow, state: "confirmed" | "dismissed") {
     await apiPatch(`/api/inbox/${item.id}`, { state });
@@ -30,7 +67,30 @@ export default function InboxPage() {
 
   return (
     <div>
-      <PageHeader title="Inbox" subtitle="Things the system noticed" />
+      <PageHeader
+        title="Inbox"
+        subtitle="Things the system noticed"
+        action={
+          gmail?.configured ? (
+            <button className="btn btn-ghost" onClick={sync} disabled={syncing}>
+              <RefreshCw size={15} /> {syncing ? "Syncing…" : "Sync mail"}
+            </button>
+          ) : undefined
+        }
+      />
+
+      {/* Only shown once a mailbox is actually connected. An unconfigured
+          integration is a normal state, not a warning to nag about. */}
+      {syncNote && (
+        <p className="text-xs mb-3" style={{ color: "var(--ink-muted)" }}>
+          {syncNote}
+        </p>
+      )}
+      {gmail?.last_error && (
+        <div className="card p-3 mb-4 text-sm" style={{ color: "var(--critical)" }}>
+          Last mail sync failed: {gmail.last_error}
+        </div>
+      )}
 
       {isLoading ? (
         <div className="card p-8 text-center text-sm" style={{ color: "var(--ink-muted)" }}>

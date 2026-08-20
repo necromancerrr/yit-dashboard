@@ -1,0 +1,300 @@
+import { db } from "@/lib/db";
+import { applyEvent } from "@/lib/career";
+import { getAIProvider } from "@/lib/ai";
+import { classifyDeterministic, AUTO_APPLY_MIN_CONFIDENCE } from "@/lib/ingest/classify";
+import { matchApplication, type MatchCandidate } from "@/lib/ingest/match";
+import { truncateSnippet } from "@/lib/ingest/normalize";
+import type { CareerSignal, IngestOutcome, NormalizedMessage } from "@/lib/ingest/types";
+import type { ApplicationStatus } from "@/lib/types";
+
+/**
+ * Message in, proposal or applied event out.
+ *
+ * The pipeline is deliberately separate from any provider: it takes normalized
+ * messages, so the whole path can be exercised against fixtures without a
+ * network, an API key, or a mailbox. That is also why the hard cases live here
+ * rather than in the Gmail client — duplicates, forwards, repeated reminders
+ * and ambiguous matches are properties of *mail*, not of one vendor.
+ *
+ * Nothing here ever creates an application. A message about a company you have
+ * not applied to becomes an inbox item asking whether to add it; inferring new
+ * rows from email would let a mis-parse invent a job you never applied for.
+ */
+
+/** How much of a mailbox one sync will look at. */
+export const SYNC_BATCH_LIMIT = 50;
+
+interface ProcessResult {
+  outcome: "applied" | "proposed" | "ignored";
+  detail: string;
+}
+
+/**
+ * Classify with rules first, and only escalate genuine gaps to the model.
+ *
+ * Rules answer most recruiting mail correctly and for free. A null from them
+ * means "this needs judgement", which is exactly and only when a model earns
+ * its round trip. A definite `isCareerRelated: false` is not escalated — the
+ * rules are certain, and asking anyway would just spend money to agree.
+ */
+async function classify(message: NormalizedMessage): Promise<CareerSignal | null> {
+  const deterministic = classifyDeterministic(message);
+  if (deterministic) return deterministic;
+
+  const provider = getAIProvider();
+  if (!provider) return null;
+
+  const result = await provider.classifyCareerEmail({
+    subject: message.subject,
+    sender: message.senderEmail ?? message.senderName ?? "unknown",
+    snippet: message.snippet,
+    receivedOn: message.receivedOn,
+  });
+  if (!result) return null;
+
+  return {
+    isCareerRelated: result.isCareerRelated,
+    company: result.company,
+    role: result.role,
+    status: result.proposedStatus,
+    // Deadlines are never taken from the classifier: extractCareerEvent is the
+    // operation that reads dates, and an invented deadline would go straight
+    // to the top of Today.
+    deadline: null,
+    confidence: result.confidence,
+    method: "ai",
+    reasoning: result.reasoning,
+  };
+}
+
+async function raiseInboxItem(params: {
+  kind: string;
+  title: string;
+  detail: string;
+  severity: "info" | "attention" | "urgent";
+  applicationId: number | null;
+  externalEventId: number;
+  proposedStatus: string | null;
+  confidence: number;
+  dedupeKey: string;
+}): Promise<void> {
+  await db.execute({
+    sql: `INSERT INTO inbox_items
+            (kind, title, detail, severity, application_id, external_event_id,
+             proposed_status, confidence, dedupe_key)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(dedupe_key) DO UPDATE SET
+            title = excluded.title,
+            detail = excluded.detail,
+            confidence = excluded.confidence`,
+    args: [
+      params.kind,
+      params.title,
+      params.detail,
+      params.severity,
+      params.applicationId,
+      params.externalEventId,
+      params.proposedStatus,
+      params.confidence,
+      params.dedupeKey,
+    ],
+  });
+}
+
+async function processMessage(
+  message: NormalizedMessage,
+  externalEventId: number
+): Promise<ProcessResult> {
+  const signal = await classify(message);
+
+  if (!signal || !signal.isCareerRelated || !signal.status) {
+    return { outcome: "ignored", detail: signal?.reasoning ?? "No career signal" };
+  }
+
+  const candidateRows = await db.execute({
+    sql: `SELECT a.id, a.company, a.role, a.status,
+                 (SELECT e.thread_id FROM external_events e
+                   JOIN application_events ae ON ae.external_event_id = e.id
+                  WHERE ae.application_id = a.id AND e.thread_id IS NOT NULL
+                  ORDER BY ae.id DESC LIMIT 1) AS thread_id
+            FROM applications a`,
+    args: [],
+  });
+  const candidates = candidateRows.rows as unknown as MatchCandidate[];
+
+  const match = matchApplication(
+    { company: signal.company, role: signal.role },
+    candidates,
+    message.threadId
+  );
+
+  const label = [signal.company ?? "An employer", signal.role].filter(Boolean).join(" · ");
+
+  if (!match.applicationId) {
+    // Nothing to attach to. Both branches are questions for you, never writes:
+    // ambiguity is resolved by a person, and an unknown company might be an
+    // application you filed outside the dashboard.
+    await raiseInboxItem({
+      kind: match.ambiguous ? "ambiguous_match" : "unmatched_career_email",
+      title: match.ambiguous
+        ? `Which ${signal.company} application is this about?`
+        : `${label} — ${signal.status}, but no matching application`,
+      detail: `${message.subject} · ${match.reason}`,
+      severity: "attention",
+      applicationId: null,
+      externalEventId,
+      proposedStatus: null,
+      confidence: signal.confidence,
+      // Keyed on the thread where there is one, so a reminder about the same
+      // situation updates this item instead of stacking another.
+      dedupeKey: `ingest:unmatched:${message.threadId ?? message.providerMessageId}`,
+    });
+    return { outcome: "proposed", detail: match.reason };
+  }
+
+  const combined = signal.confidence * match.confidence;
+  const trustworthy =
+    signal.method === "deterministic" && combined >= AUTO_APPLY_MIN_CONFIDENCE * 0.9;
+
+  if (trustworthy) {
+    // applyEvent is the second line of defence, not the only one: it still
+    // refuses a regression, a terminal reopen, or anything older than a
+    // correction you made by hand.
+    const applied = await applyEvent({
+      applicationId: match.applicationId,
+      kind: "status_change",
+      toStatus: signal.status,
+      occurredOn: message.receivedOn,
+      detail: `${signal.reasoning}: ${message.subject}`,
+      source: "gmail",
+      externalEventId,
+      confidence: combined,
+    });
+
+    if (applied.applied) {
+      if (signal.deadline) {
+        await db.execute({
+          sql: `UPDATE applications
+                SET next_action_date = ?, next_action_label = ?, updated_at = datetime('now')
+                WHERE id = ?`,
+          args: [signal.deadline, `${signal.status} due`, match.applicationId],
+        });
+      }
+      return { outcome: "applied", detail: `${signal.status} — ${applied.reason}` };
+    }
+
+    // Refused by the guard. That is a judgement worth surfacing rather than
+    // discarding: it is how you find out something disagreed with your record.
+    await raiseInboxItem({
+      kind: "rejected_inference",
+      title: `${label} — email suggests ${signal.status}, not applied`,
+      detail: `${applied.reason}. ${message.subject}`,
+      severity: "info",
+      applicationId: match.applicationId,
+      externalEventId,
+      proposedStatus: null,
+      confidence: combined,
+      dedupeKey: `ingest:refused:${match.applicationId}:${signal.status}`,
+    });
+    return { outcome: "proposed", detail: applied.reason };
+  }
+
+  await raiseInboxItem({
+    kind: "proposed_status",
+    title: `${label} — move to ${signal.status}?`,
+    detail: `${message.subject} · ${signal.reasoning}`,
+    severity: "attention",
+    applicationId: match.applicationId,
+    externalEventId,
+    proposedStatus: signal.status satisfies ApplicationStatus,
+    confidence: combined,
+    // One open proposal per application per target status: a recruiter sending
+    // the same reminder three times updates this row rather than adding two.
+    dedupeKey: `ingest:propose:${match.applicationId}:${signal.status}`,
+  });
+  return { outcome: "proposed", detail: `Proposed ${signal.status}` };
+}
+
+/**
+ * Run a batch of messages through the pipeline.
+ *
+ * Each message is recorded in external_events first. The UNIQUE constraint on
+ * (provider, provider_message_id) is what makes the whole run idempotent: a
+ * duplicate delivery, a re-sync after a cursor rewind, or the boundary message
+ * Gmail's inclusive `after:` returns twice all collapse here, before any
+ * classification happens or any model is called.
+ */
+export async function ingestMessages(
+  provider: string,
+  messages: NormalizedMessage[],
+  integrationId: number | null = null
+): Promise<IngestOutcome> {
+  const outcome: IngestOutcome = {
+    fetched: messages.length,
+    ingested: 0,
+    career: 0,
+    applied: 0,
+    proposed: 0,
+    ignored: 0,
+  };
+
+  for (const message of messages) {
+    const inserted = await db.execute({
+      sql: `INSERT INTO external_events
+              (integration_id, provider, provider_message_id, thread_id, occurred_at,
+               subject, sender, snippet, processing_status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+            ON CONFLICT(provider, provider_message_id) DO NOTHING
+            RETURNING id`,
+      args: [
+        integrationId,
+        provider,
+        message.providerMessageId,
+        message.threadId,
+        message.receivedOn,
+        message.subject,
+        message.senderEmail ?? message.senderName,
+        truncateSnippet(message.snippet),
+      ],
+    });
+
+    // No row returned means this message was already ingested. Skipping here
+    // rather than re-processing is what stops a repeated reminder from
+    // producing a second timeline event.
+    if (inserted.rows.length === 0) continue;
+    outcome.ingested += 1;
+    const externalEventId = Number(inserted.rows[0].id);
+
+    let result: ProcessResult;
+    try {
+      result = await processMessage(message, externalEventId);
+    } catch (err) {
+      console.error("Ingest failed for", message.providerMessageId, err);
+      await db.execute({
+        sql: `UPDATE external_events
+              SET processing_status = 'failed', error = ?, processed_at = datetime('now')
+              WHERE id = ?`,
+        args: [err instanceof Error ? err.message : "Unknown error", externalEventId],
+      });
+      continue;
+    }
+
+    if (result.outcome === "applied") outcome.applied += 1;
+    else if (result.outcome === "proposed") outcome.proposed += 1;
+    else outcome.ignored += 1;
+    if (result.outcome !== "ignored") outcome.career += 1;
+
+    await db.execute({
+      sql: `UPDATE external_events
+            SET processing_status = ?, classification = ?, processed_at = datetime('now')
+            WHERE id = ?`,
+      args: [
+        result.outcome === "ignored" ? "ignored" : "processed",
+        result.detail,
+        externalEventId,
+      ],
+    });
+  }
+
+  return outcome;
+}
