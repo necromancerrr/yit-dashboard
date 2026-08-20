@@ -246,6 +246,9 @@ metadata, `Nav`, the login page, and the generated icons. Keep it that way.
 | `APP_PASSWORD` | one of these | plaintext password (local only) |
 | `NEXT_PUBLIC_DISPLAY_NAME` | no | name in UI, defaults to "You" — **inlined at build time**, so Docker passes it as a build arg |
 | `ANTHROPIC_API_KEY` | no | enables `/api/import/screenshot` (Claude vision); feature reports unconfigured without it |
+| `DEEPSEEK_API_KEY` | no | enables AI-backed text features through the default DeepSeek provider |
+| `AI_PROVIDER` | no | text AI provider: defaults to `deepseek`; use `none` to disable or `anthropic` for the legacy provider |
+| `AI_MODEL` | no | text AI model override; DeepSeek defaults to `deepseek-v4-flash` |
 | `APP_TIMEZONE` | no | IANA zone the day rolls over in (streaks, "today", checklist reset). Not `TZ` — reserved on Vercel |
 | `DATABASE_URL` | no | libSQL/Turso URL; defaults to local file |
 | `DATABASE_AUTH_TOKEN` | no | Turso token |
