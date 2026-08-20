@@ -1,7 +1,7 @@
 "use client";
 
 import useSWR from "swr";
-import { Flame, Code2, Briefcase, GraduationCap, Wallet, CheckSquare } from "lucide-react";
+import { Flame, Code2, Briefcase, GraduationCap, Wallet, CheckSquare, Bitcoin } from "lucide-react";
 import { fetcher } from "@/lib/fetcher";
 import { StatCard } from "@/components/StatCard";
 import { PageHeader } from "@/components/PageHeader";
@@ -71,6 +71,13 @@ export default function OverviewPage() {
           sub={`${currency(data?.monthIncome ?? 0)} in · ${currency(data?.monthExpense ?? 0)} out`}
           icon={Wallet}
           accent="var(--cat-finance)"
+        />
+        <StatCard
+          label="Crypto"
+          value={isLoading ? "–" : currency(data?.cryptoValue ?? 0)}
+          sub={`${data?.cryptoCount ?? 0} holding${data?.cryptoCount === 1 ? "" : "s"} · live`}
+          icon={Bitcoin}
+          accent="var(--cat-crypto)"
         />
         <StatCard
           label="Today's checklist"
