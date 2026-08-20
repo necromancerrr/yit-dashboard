@@ -6,6 +6,13 @@ import { Lock } from "lucide-react";
 import { Logo } from "@/components/Logo";
 import { getBrandName } from "@/lib/identity";
 
+// `next` comes straight from the query string, so only ever follow it when it
+// is a path on this site — "//evil.com" and absolute URLs are not.
+function safeNext(next: string | null): string {
+  if (!next || !next.startsWith("/") || next.startsWith("//")) return "/";
+  return next;
+}
+
 function LoginForm() {
   const router = useRouter();
   const params = useSearchParams();
@@ -29,8 +36,7 @@ function LoginForm() {
         setLoading(false);
         return;
       }
-      const next = params.get("next") || "/";
-      router.replace(next);
+      router.replace(safeNext(params.get("next")));
       router.refresh();
     } catch {
       setError("Could not reach the server");

@@ -7,13 +7,14 @@ import { handleRoute, withDb, todayISO } from "@/lib/api-helpers";
 export async function GET() {
   return handleRoute(async () => {
     return withDb(async () => {
-      const [gym, leetcode, interviews, school, finance, checklist] = await Promise.all([
+      const [gym, leetcode, interviews, school, finance, checklist, completions] = await Promise.all([
         db.execute("SELECT * FROM gym_logs ORDER BY date"),
         db.execute("SELECT * FROM leetcode_logs ORDER BY date"),
         db.execute("SELECT * FROM interviews ORDER BY id"),
         db.execute("SELECT * FROM school_tasks ORDER BY id"),
         db.execute("SELECT * FROM finance_transactions ORDER BY date"),
         db.execute("SELECT * FROM checklist_items ORDER BY id"),
+        db.execute("SELECT * FROM checklist_completions ORDER BY date"),
       ]);
 
       const payload = {
@@ -24,6 +25,7 @@ export async function GET() {
         school_tasks: school.rows,
         finance_transactions: finance.rows,
         checklist_items: checklist.rows,
+        checklist_completions: completions.rows,
       };
 
       return new NextResponse(JSON.stringify(payload, null, 2), {

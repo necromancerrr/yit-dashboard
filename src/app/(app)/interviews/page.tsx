@@ -8,6 +8,7 @@ import { useUndoableDelete } from "@/lib/useUndoableDelete";
 import { PageHeader } from "@/components/PageHeader";
 import { EmptyState } from "@/components/EmptyState";
 import { Modal } from "@/components/Modal";
+import { parseISODate } from "@/lib/date";
 import type { Interview, InterviewStage } from "@/lib/types";
 
 const STAGES: InterviewStage[] = ["Applied", "OA", "Phone Screen", "Technical", "Onsite", "Offer", "Rejected"];
@@ -24,7 +25,7 @@ const STAGE_COLOR: Record<string, string> = {
 
 function fmt(iso: string | null) {
   if (!iso) return "No date set";
-  return new Date(iso + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  return parseISODate(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 }
 
 const emptyForm = { company: "", role: "", stage: "Applied" as InterviewStage, date: "", notes: "" };

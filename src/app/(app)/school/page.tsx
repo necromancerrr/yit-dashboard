@@ -8,6 +8,7 @@ import { useUndoableDelete } from "@/lib/useUndoableDelete";
 import { PageHeader } from "@/components/PageHeader";
 import { EmptyState } from "@/components/EmptyState";
 import { Modal } from "@/components/Modal";
+import { parseISODate, todayISO } from "@/lib/date";
 import type { SchoolTask } from "@/lib/types";
 
 const STATUSES = ["Pending", "In Progress", "Done"] as const;
@@ -20,12 +21,12 @@ const STATUS_COLOR: Record<string, string> = {
 
 function fmt(iso: string | null) {
   if (!iso) return "No due date";
-  return new Date(iso + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  return parseISODate(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
 function isOverdue(iso: string | null, status: string) {
   if (!iso || status === "Done") return false;
-  return iso < new Date().toISOString().slice(0, 10);
+  return iso < todayISO();
 }
 
 const emptyForm = { course: "", title: "", due_date: "", notes: "" };

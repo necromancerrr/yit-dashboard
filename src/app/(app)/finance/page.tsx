@@ -8,17 +8,14 @@ import { useUndoableDelete } from "@/lib/useUndoableDelete";
 import { PageHeader } from "@/components/PageHeader";
 import { EmptyState } from "@/components/EmptyState";
 import { Modal } from "@/components/Modal";
+import { parseISODate, todayISO } from "@/lib/date";
 import type { FinanceTransaction } from "@/lib/types";
 
 const EXPENSE_CATEGORIES = ["Rent", "Groceries", "Dining", "Transport", "Subscriptions", "Fun", "School", "Other"];
 const INCOME_CATEGORIES = ["Paycheck", "Internship", "Financial Aid", "Gift", "Other"];
 
-function todayISO() {
-  return new Date().toISOString().slice(0, 10);
-}
-
 function fmt(iso: string) {
-  return new Date(iso + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  return parseISODate(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
 function currency(n: number) {

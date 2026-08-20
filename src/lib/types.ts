@@ -71,6 +71,12 @@ export interface ChecklistItem {
   created_at: string;
 }
 
+export interface ChecklistCompletion {
+  id: number;
+  item_id: number;
+  date: string;
+}
+
 export interface HeatmapDay {
   date: string;
   count: number;

@@ -28,6 +28,10 @@ Edit `.env.local`:
 
 - `AUTH_SECRET` — any random string, 16+ characters (`openssl rand -base64 32`)
 - `APP_PASSWORD` — the password you'll type in to sign in (quick start)
+- `TZ` — your timezone (e.g. `America/New_York`). This decides when the day
+  rolls over for gym streaks, the heatmap, and the daily checklist reset;
+  without it the app follows the machine's timezone, which is UTC on most
+  hosts.
 
 Then:
 
@@ -56,7 +60,9 @@ docker compose up -d --build
 
 The app will be on http://localhost:3000. For a real deployment, point your
 platform's "deploy from Dockerfile" flow at this repo and attach a persistent
-volume at `/app/db`.
+volume at `/app/db`. Set `TZ` too, and pass
+`NEXT_PUBLIC_DISPLAY_NAME` as a *build argument* — it is compiled into the
+bundle, so setting it only at run time won't change the name on screen.
 
 **Railway** specifically: create a new project from this GitHub repo, add a
 volume mounted at `/app/db`, and set `AUTH_SECRET` + `APP_PASSWORD` (or
@@ -111,6 +117,7 @@ src/
   lib/
     db.ts                 # libSQL client + schema migration (runs lazily)
     auth.ts                # session cookie + password verification
+    date.ts               # local-calendar date helpers (not UTC)
     types.ts               # shared types
   proxy.ts                 # route protection (Next.js 16's proxy.js, formerly middleware)
 scripts/hash-password.mjs  # generate APP_PASSWORD_HASH
@@ -118,8 +125,9 @@ scripts/hash-password.mjs  # generate APP_PASSWORD_HASH
 
 ## Extending it
 
-Everything lives in six SQLite tables (`gym_logs`, `leetcode_logs`,
-`interviews`, `school_tasks`, `finance_transactions`, `checklist_items`) —
+Everything lives in seven SQLite tables (`gym_logs`, `leetcode_logs`,
+`interviews`, `school_tasks`, `finance_transactions`, `checklist_items`, and
+`checklist_completions`, the per-day log behind the heatmap) —
 see `src/lib/db.ts` for the schema. Add a column or table there, add a route
 in `src/app/api/`, and a page/component to surface it; the pattern is the
 same across every section.

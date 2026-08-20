@@ -100,6 +100,24 @@ CREATE TABLE IF NOT EXISTS checklist_items (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_checklist_category ON checklist_items(category);
+
+-- Permanent log of every day a checklist item was completed. The done/done_date
+-- columns above are only *current* state (and get cleared when a recurring
+-- habit rolls over to a new day), so history lives here instead — that's what
+-- the activity heatmap reads.
+CREATE TABLE IF NOT EXISTS checklist_completions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  item_id INTEGER NOT NULL,
+  date TEXT NOT NULL,
+  UNIQUE(item_id, date)
+);
+CREATE INDEX IF NOT EXISTS idx_checklist_completions_date ON checklist_completions(date);
+
+-- Backfill for databases created before the completions table existed: seed it
+-- from whatever done_date each item is currently carrying. Idempotent (the
+-- UNIQUE constraint plus OR IGNORE), so it is safe to re-run on every boot.
+INSERT OR IGNORE INTO checklist_completions (item_id, date)
+  SELECT id, done_date FROM checklist_items WHERE done = 1 AND done_date IS NOT NULL;
 `;
 
 async function migrate(): Promise<void> {

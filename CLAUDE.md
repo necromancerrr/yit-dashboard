@@ -64,6 +64,8 @@ src/
     db.ts                 # libSQL client (global singleton) + SCHEMA + ensureDb()
     auth.ts               # password verify, JWT sign/verify, cookie options
     api-helpers.ts        # handleRoute / withDb / jsonError / todayISO
+    date.ts               # local-calendar date helpers — use these, never toISOString()
+    checklist.ts          # daily rollover for recurring habits
     fetcher.ts            # SWR fetcher + apiPost / apiPatch / apiDelete
     identity.ts           # display/brand name from NEXT_PUBLIC_DISPLAY_NAME
     types.ts              # row interfaces mirroring the SQL schema
@@ -71,8 +73,6 @@ src/
   proxy.ts                # auth gate (Next.js 16 renamed middleware.ts → proxy.ts)
 scripts/hash-password.mjs
 ```
-
-`_update.zip` at the repo root is a leftover artifact, not part of the build.
 
 ## How the pieces fit
 
@@ -97,9 +97,15 @@ dev hot-reloads don't open new connections. The whole schema lives in the
 EXISTS` statements, split on `;` and executed once by `ensureDb()` (memoized on
 `globalThis.__dashboardDbReady`).
 
-Six tables: `gym_logs`, `leetcode_logs`, `interviews`, `school_tasks`,
-`finance_transactions`, `checklist_items`. `snake_case` columns; dates are
-`TEXT` ISO `YYYY-MM-DD`; booleans are `INTEGER` 0/1.
+Seven tables: `gym_logs`, `leetcode_logs`, `interviews`, `school_tasks`,
+`finance_transactions`, `checklist_items`, `checklist_completions`.
+`snake_case` columns; dates are `TEXT` ISO `YYYY-MM-DD`; booleans are
+`INTEGER` 0/1.
+
+`SCHEMA` also ends with an idempotent `INSERT OR IGNORE … SELECT` that
+backfills `checklist_completions` from legacy `done_date` values — that is the
+pattern to follow for data migrations here, since every statement re-runs on
+each boot and must stay safe to repeat.
 
 **Schema changes:** this is additive-only migration. Adding a table or index is
 safe; adding a column to an existing table requires an extra `ALTER TABLE`
@@ -109,6 +115,23 @@ exists. Mirror any change in `src/lib/types.ts` and in `/api/export`.
 `DATABASE_URL` overrides the default `file:<cwd>/db/local.db`; set it (plus
 `DATABASE_AUTH_TOKEN`) to point at Turso. Docker sets it to
 `file:/app/db/app.db` on a mounted volume.
+
+### Dates
+**Never use `new Date().toISOString().slice(0, 10)`** — that is the date in
+UTC, not the user's day, and it silently files evening entries under tomorrow
+(or morning entries under yesterday, east of UTC). Use `src/lib/date.ts`:
+`todayISO()`, `toISODate(date)`, `daysAgoISO(n)`, `parseISODate(iso)`. On the
+server "local" means the server's timezone, so deployments set `TZ`.
+
+### Checklist semantics
+`checklist_items.done` / `done_date` are *current* state;
+`checklist_completions` is the permanent per-day log the heatmap reads.
+Recurring items are daily habits: `rolloverRecurringChecklist()` in
+`src/lib/checklist.ts` lazily clears `done` on any recurring item last
+completed before today, and is called at the top of `GET /api/checklist` and
+`GET /api/summary` (no cron). Non-recurring items are never rolled over.
+Ticking an item writes a completion; unticking removes *today's* completion
+only, leaving history intact.
 
 ### API routes — the per-resource pattern
 Every resource follows the same shape; copy an existing one (`api/gym/`) rather
@@ -179,7 +202,8 @@ metadata, `Nav`, the login page, and the generated icons. Keep it that way.
 | `AUTH_SECRET` | yes | JWT signing key, ≥16 chars |
 | `APP_PASSWORD_HASH` | one of these | bcrypt hash (preferred) |
 | `APP_PASSWORD` | one of these | plaintext password (local only) |
-| `NEXT_PUBLIC_DISPLAY_NAME` | no | name in UI, defaults to "You" |
+| `NEXT_PUBLIC_DISPLAY_NAME` | no | name in UI, defaults to "You" — **inlined at build time**, so Docker passes it as a build arg |
+| `TZ` | no | timezone the day rolls over in (streaks, "today", checklist reset) |
 | `DATABASE_URL` | no | libSQL/Turso URL; defaults to local file |
 | `DATABASE_AUTH_TOKEN` | no | Turso token |
 
@@ -195,6 +219,9 @@ update `.env.example` when adding a variable.
   `AUTH_SECRET`/`APP_PASSWORD` at build time only; real values come at runtime.
   `docker-compose.yml` mounts a named volume at `/app/db`.
 - Vercel needs Turso, since its filesystem is ephemeral.
+- `NEXT_PUBLIC_*` is baked into the bundle by `next build`. The Dockerfile
+  takes `NEXT_PUBLIC_DISPLAY_NAME` as an `ARG` for exactly this reason —
+  setting it only at run time has no effect, and changing it needs a rebuild.
 
 ## Adding a new section (checklist)
 

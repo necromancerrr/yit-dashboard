@@ -8,16 +8,13 @@ import { useUndoableDelete } from "@/lib/useUndoableDelete";
 import { PageHeader } from "@/components/PageHeader";
 import { EmptyState } from "@/components/EmptyState";
 import { Modal } from "@/components/Modal";
+import { parseISODate, todayISO } from "@/lib/date";
 import type { GymLog } from "@/lib/types";
 
 const WORKOUT_TYPES = ["Push", "Pull", "Legs", "Upper", "Lower", "Full Body", "Cardio", "Mobility", "Other"];
 
-function todayISO() {
-  return new Date().toISOString().slice(0, 10);
-}
-
 function fmt(iso: string) {
-  return new Date(iso + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric", weekday: "short" });
+  return parseISODate(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", weekday: "short" });
 }
 
 const emptyForm = { date: todayISO(), workout_type: "Push", duration_min: "", notes: "" };
