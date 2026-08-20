@@ -71,6 +71,20 @@ export interface ChecklistItem {
   created_at: string;
 }
 
+export interface ChecklistCompletion {
+  id: number;
+  item_id: number;
+  date: string;
+}
+
+/** A registered WebAuthn device. Key material is deliberately not exposed here. */
+export interface Passkey {
+  id: number;
+  label: string;
+  created_at: string;
+  last_used_at: string | null;
+}
+
 export interface HeatmapDay {
   date: string;
   count: number;

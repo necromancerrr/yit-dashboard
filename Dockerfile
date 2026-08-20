@@ -17,6 +17,10 @@ COPY . .
 # while collecting page data); real secrets are supplied at run time below.
 ENV AUTH_SECRET="build-time-placeholder-secret-value-123456"
 ENV APP_PASSWORD="build-time-placeholder"
+# NEXT_PUBLIC_* values are inlined into the bundle at build time, so the display
+# name has to be supplied here — setting it only at run time has no effect.
+ARG NEXT_PUBLIC_DISPLAY_NAME
+ENV NEXT_PUBLIC_DISPLAY_NAME=${NEXT_PUBLIC_DISPLAY_NAME}
 RUN npm run build
 
 # ---- Runtime ----
@@ -35,6 +39,8 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 USER nextjs
 EXPOSE 3000
 ENV PORT=3000
+# Day rollover (streaks, "today", checklist reset) follows this timezone.
+ENV TZ=UTC
 # SQLite file lives on the mounted volume so data survives redeploys.
 ENV DATABASE_URL="file:/app/db/app.db"
 

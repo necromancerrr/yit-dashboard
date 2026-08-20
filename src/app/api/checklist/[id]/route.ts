@@ -18,10 +18,24 @@ export async function PATCH(
     const body = updateSchema.parse(await req.json());
     return withDb(async () => {
       if (body.done !== undefined) {
+        const today = todayISO();
         await db.execute({
           sql: "UPDATE checklist_items SET done = ?, done_date = ? WHERE id = ?",
-          args: [body.done ? 1 : 0, body.done ? todayISO() : null, id],
+          args: [body.done ? 1 : 0, body.done ? today : null, id],
         });
+        // Keep the permanent completion log in step, so the heatmap survives
+        // the daily rollover that clears `done` on recurring items.
+        if (body.done) {
+          await db.execute({
+            sql: "INSERT OR IGNORE INTO checklist_completions (item_id, date) VALUES (?, ?)",
+            args: [id, today],
+          });
+        } else {
+          await db.execute({
+            sql: "DELETE FROM checklist_completions WHERE item_id = ? AND date = ?",
+            args: [id, today],
+          });
+        }
       }
       if (body.title !== undefined) {
         await db.execute({ sql: "UPDATE checklist_items SET title = ? WHERE id = ?", args: [body.title, id] });
@@ -42,6 +56,7 @@ export async function DELETE(
   return handleRoute(async () => {
     const { id } = await params;
     return withDb(async () => {
+      await db.execute({ sql: "DELETE FROM checklist_completions WHERE item_id = ?", args: [id] });
       await db.execute({ sql: "DELETE FROM checklist_items WHERE id = ?", args: [id] });
       return NextResponse.json({ ok: true });
     });

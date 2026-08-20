@@ -23,6 +23,5 @@ export async function handleRoute(fn: () => Promise<NextResponse>) {
   }
 }
 
-export function todayISO(): string {
-  return new Date().toISOString().slice(0, 10);
-}
+// Re-exported so route handlers can keep importing it from one place.
+export { todayISO } from "@/lib/date";

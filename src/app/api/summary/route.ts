@@ -1,18 +1,18 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { handleRoute, withDb, todayISO } from "@/lib/api-helpers";
+import { handleRoute, withDb } from "@/lib/api-helpers";
+import { daysAgoISO, toISODate, todayISO } from "@/lib/date";
+import { rolloverRecurringChecklist } from "@/lib/checklist";
 import type { HeatmapDay, SchoolTask } from "@/lib/types";
-
-function daysAgoISO(n: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() - n);
-  return d.toISOString().slice(0, 10);
-}
 
 export async function GET() {
   return handleRoute(async () => {
     return withDb(async () => {
       const today = todayISO();
+      // Un-check recurring habits that were completed on an earlier day, so
+      // "today's checklist" reflects today and not whenever it was last done.
+      await rolloverRecurringChecklist(today);
+
       const yearAgo = daysAgoISO(364);
       const weekAgo = daysAgoISO(6);
       const monthStart = today.slice(0, 7) + "-01";
@@ -22,7 +22,7 @@ export async function GET() {
           db.execute({ sql: "SELECT DISTINCT date FROM gym_logs WHERE date >= ?", args: [yearAgo] }),
           db.execute({ sql: "SELECT DISTINCT date FROM leetcode_logs WHERE date >= ?", args: [yearAgo] }),
           db.execute({
-            sql: "SELECT DISTINCT done_date as date FROM checklist_items WHERE done = 1 AND done_date >= ?",
+            sql: "SELECT DISTINCT date FROM checklist_completions WHERE date >= ?",
             args: [yearAgo],
           }),
           db.execute({ sql: "SELECT COUNT(*) as c FROM leetcode_logs WHERE date >= ?", args: [weekAgo] }),
@@ -44,7 +44,10 @@ export async function GET() {
             args: [monthStart],
           }),
           db.execute({
-            sql: "SELECT COUNT(*) as total, SUM(CASE WHEN done=1 THEN 1 ELSE 0 END) as done FROM checklist_items WHERE recurring = 1",
+            sql: `SELECT COUNT(*) as total,
+                         SUM(CASE WHEN done = 1 AND done_date = ? THEN 1 ELSE 0 END) as done
+                  FROM checklist_items WHERE recurring = 1`,
+            args: [today],
           }),
         ]);
 
@@ -68,7 +71,7 @@ export async function GET() {
       const cursor = new Date();
       if (!gymDateSet.has(today)) cursor.setDate(cursor.getDate() - 1);
       for (;;) {
-        const iso = cursor.toISOString().slice(0, 10);
+        const iso = toISODate(cursor);
         if (gymDateSet.has(iso)) {
           streak += 1;
           cursor.setDate(cursor.getDate() - 1);
