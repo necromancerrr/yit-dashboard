@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { NextRequest } from "next/server";
 import type { NormalizedMessage } from "@/lib/ingest/types";
 
 /**
@@ -22,6 +23,7 @@ type Mod = {
   db: typeof import("@/lib/db").db;
   ensureDb: typeof import("@/lib/db").ensureDb;
   ingestMessages: typeof import("@/lib/ingest/pipeline").ingestMessages;
+  patchInbox: typeof import("@/app/api/inbox/[id]/route").PATCH;
 };
 let mod: Mod;
 
@@ -68,17 +70,39 @@ async function statusOf(id: number) {
 }
 
 async function inboxItems() {
-  const r = await mod.db.execute("SELECT kind, title, proposed_status, application_id, state, dedupe_key FROM inbox_items");
+  const r = await mod.db.execute(
+    `SELECT id, kind, title, proposed_status, proposed_company, proposed_role,
+            proposed_next_action_date, application_id, state, dedupe_key
+       FROM inbox_items`
+  );
   return r.rows as unknown as {
-    kind: string; title: string; proposed_status: string | null;
+    id: number; kind: string; title: string; proposed_status: string | null;
+    proposed_company: string | null; proposed_role: string | null;
+    proposed_next_action_date: string | null;
     application_id: number | null; state: string; dedupe_key: string;
   }[];
+}
+
+async function confirmInboxItem(id: number) {
+  return mod.patchInbox(
+    new NextRequest(`http://localhost/api/inbox/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ state: "confirmed" }),
+    }),
+    { params: Promise.resolve({ id: String(id) }) }
+  );
 }
 
 before(async () => {
   const dbMod = await import("@/lib/db");
   const pipeline = await import("@/lib/ingest/pipeline");
-  mod = { db: dbMod.db, ensureDb: dbMod.ensureDb, ingestMessages: pipeline.ingestMessages };
+  const inbox = await import("@/app/api/inbox/[id]/route");
+  mod = {
+    db: dbMod.db,
+    ensureDb: dbMod.ensureDb,
+    ingestMessages: pipeline.ingestMessages,
+    patchInbox: inbox.PATCH,
+  };
   await mod.ensureDb();
 });
 
@@ -167,7 +191,7 @@ describe("ingestion pipeline", () => {
     assert.equal(items[0].application_id, null, "no application is touched while it is unclear");
   });
 
-  test("an email for a company with no application asks rather than inventing one", async () => {
+  test("an email for a company with no application proposes creating one", async () => {
     const before = await mod.db.execute("SELECT COUNT(*) c FROM applications");
     const out = await mod.ingestMessages("gmail", [
       msg({
@@ -181,8 +205,66 @@ describe("ingestion pipeline", () => {
 
     assert.equal(out.proposed, 1);
     const after = await mod.db.execute("SELECT COUNT(*) c FROM applications");
-    assert.equal(Number(after.rows[0].c), Number(before.rows[0].c), "ingestion never creates applications");
-    assert.equal((await inboxItems())[0].kind, "unmatched_career_email");
+    assert.equal(Number(after.rows[0].c), Number(before.rows[0].c), "ingestion waits for confirmation");
+    const [item] = await inboxItems();
+    assert.equal(item.kind, "unmatched_career_email");
+    assert.equal(item.proposed_status, "Applied");
+    assert.equal(item.proposed_company, "Snowflake");
+  });
+
+  test("confirming an unmatched email creates the Career application", async () => {
+    await mod.ingestMessages("gmail", [
+      msg({
+        providerMessageId: "snow-102",
+        threadId: "snow-thread",
+        subject: "Thank you for applying to Snowflake",
+        senderEmail: "no-reply@snowflake.com",
+        senderName: "Snowflake",
+        snippet: "We have received your application and will review it shortly.",
+      }),
+    ]);
+    const [item] = await inboxItems();
+
+    const response = await confirmInboxItem(item.id);
+    assert.equal(response.status, 200);
+
+    const apps = await mod.db.execute("SELECT id, company, status, source FROM applications");
+    assert.equal(apps.rows.length, 1);
+    assert.equal(apps.rows[0].company, "Snowflake");
+    assert.equal(apps.rows[0].status, "Applied");
+    assert.equal(apps.rows[0].source, "gmail");
+
+    const events = await mod.db.execute({
+      sql: "SELECT kind, to_status, source, external_event_id FROM application_events WHERE application_id = ?",
+      args: [Number(apps.rows[0].id)],
+    });
+    assert.equal(events.rows.length, 1);
+    assert.equal(events.rows[0].kind, "created");
+    assert.equal(events.rows[0].to_status, "Applied");
+    assert.equal(events.rows[0].source, "gmail");
+    assert.ok(events.rows[0].external_event_id, "created event links to the email");
+  });
+
+  test("confirming a create proposal rematches first to avoid duplicates", async () => {
+    await mod.ingestMessages("gmail", [
+      msg({
+        providerMessageId: "ramp-102",
+        threadId: "ramp-thread",
+        subject: "Codility assessment for your application to Ramp",
+        senderEmail: "noreply@codility.com",
+        senderName: "Codility",
+        snippet: "You have been invited to complete an online assessment for your application to Ramp.",
+      }),
+    ]);
+    const [item] = await inboxItems();
+    const existingId = await seedApplication("Ramp", "SWE Intern", "Applied");
+
+    const response = await confirmInboxItem(item.id);
+    assert.equal(response.status, 200);
+
+    const apps = await mod.db.execute("SELECT COUNT(*) c FROM applications");
+    assert.equal(Number(apps.rows[0].c), 1, "no duplicate application is created");
+    assert.equal((await statusOf(existingId)).status, "OA");
   });
 
   test("a job alert is ignored without reaching the matcher", async () => {

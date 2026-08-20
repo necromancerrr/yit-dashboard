@@ -182,8 +182,8 @@ export function extractDeadline(text: string, receivedOn: string): string | null
  */
 export function extractCompanyFromText(text: string): string | null {
   const patterns = [
-    /\b(?:your application (?:to|at|with)|applying (?:to|at|with)|position (?:at|with)|role (?:at|with)|interview (?:at|with)|assessment for)\s+([A-Z][\w&.\-]*(?:\s+[A-Z][\w&.\-]*){0,3})/,
-    /\b([A-Z][\w&.\-]*(?:\s+[A-Z][\w&.\-]*){0,3})\s+(?:has invited you|invites you|would like to invite you)/,
+    /\b(?:your application (?:to|at|with)|applying (?:to|at|with)|position (?:at|with)|role (?:at|with)|interview (?:at|with)|assessment for)\s+([A-Z][\w&.\-]*(?:[ \t]+[A-Z][\w&.\-]*){0,3})/,
+    /\b([A-Z][\w&.\-]*(?:[ \t]+[A-Z][\w&.\-]*){0,3})\s+(?:has invited you|invites you|would like to invite you)/,
   ];
   for (const pattern of patterns) {
     const match = pattern.exec(text);

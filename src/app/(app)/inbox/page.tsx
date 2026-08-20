@@ -101,7 +101,7 @@ export default function InboxPage() {
           <EmptyState
             icon={InboxIcon}
             title="Nothing needs your attention"
-            sub="Deadlines and applications that stop moving show up here on their own."
+            sub="Mail, deadlines, and applications that stop moving show up here on their own."
           />
         </div>
       ) : (
@@ -133,14 +133,18 @@ export default function InboxPage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
-                  {/* Confirm only appears when there is something to accept —
-                      a proposed status change. Derived nudges are dismissed. */}
+                  {/* Confirm only appears when there is something to accept:
+                      a status change, or an email-backed application to create. */}
                   {item.proposed_status && (
                     <button
                       onClick={() => resolve(item, "confirmed")}
                       className="icon-btn"
                       aria-label={`Confirm: ${item.title}`}
-                      title={`Set status to ${item.proposed_status}`}
+                      title={
+                        item.application_id
+                          ? `Set status to ${item.proposed_status}`
+                          : "Create application"
+                      }
                     >
                       <Check size={14} />
                     </button>

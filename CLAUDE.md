@@ -362,9 +362,10 @@ judgement"* — that null is the only thing that triggers an AI call. A definite
 `isCareerRelated: false` is never escalated. Rules are free, offline, identical
 every run, and testable against fixtures; a model is none of those.
 
-**Ingestion never creates applications.** A message about a company with no
-application becomes an inbox question. Inferring rows from email would let one
-mis-parse invent a job you never applied for.
+**Ingestion proposes before it creates.** A message about a company with no
+application becomes an Inbox item carrying the proposed company, role and
+status. Confirming that item creates the Career row; the sync itself never
+invents an application without a user click.
 
 **Auto-apply is narrow.** Only deterministic signals, above the confidence bar,
 with an unambiguous match, are written straight through — and `applyEvent()`

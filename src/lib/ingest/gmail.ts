@@ -36,7 +36,7 @@ const RECRUITING_QUERY =
   "-category:promotions";
 
 /** First run has no cursor; this bounds how far back it reaches. */
-const FIRST_RUN_DAYS = 30;
+export const FIRST_RUN_DAYS = 180;
 
 interface GmailListResponse {
   messages?: { id: string; threadId: string }[];
