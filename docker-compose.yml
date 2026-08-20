@@ -1,6 +1,10 @@
 services:
   dashboard:
-    build: .
+    build:
+      context: .
+      args:
+        # Baked into the client bundle at build time — rebuild to change it.
+        NEXT_PUBLIC_DISPLAY_NAME: ${NEXT_PUBLIC_DISPLAY_NAME:-}
     ports:
       - "3000:3000"
     environment:
@@ -9,6 +13,10 @@ services:
       # Prefer APP_PASSWORD_HASH in production — see scripts/hash-password.mjs
       APP_PASSWORD: ${APP_PASSWORD:-}
       APP_PASSWORD_HASH: ${APP_PASSWORD_HASH:-}
+      # Decides when "today" rolls over for streaks and the daily checklist.
+      # APP_TIMEZONE is what the app reads; TZ also sets the container clock.
+      APP_TIMEZONE: ${APP_TIMEZONE:-}
+      TZ: ${TZ:-UTC}
     volumes:
       - dashboard-db:/app/db
     restart: unless-stopped

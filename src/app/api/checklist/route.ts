@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { handleRoute, withDb } from "@/lib/api-helpers";
+import { rolloverRecurringChecklist } from "@/lib/checklist";
 
 const createSchema = z.object({
   title: z.string().min(1, "Title is required"),
@@ -12,6 +13,7 @@ const createSchema = z.object({
 export async function GET() {
   return handleRoute(async () => {
     return withDb(async () => {
+      await rolloverRecurringChecklist();
       const result = await db.execute(
         "SELECT * FROM checklist_items ORDER BY done ASC, category ASC, id DESC"
       );

@@ -37,6 +37,7 @@
   --cat-school: #c98500; /* yellow */
   --cat-interviews: #d55181; /* magenta */
   --cat-checklist: #9085e9; /* violet */
+  --cat-crypto: #d9a326; /* gold */
 
   /* Heatmap ramp: dim -> bright = low -> high, warming from blue into the
      signature violet at peak activity so a great week actually looks like one. */

@@ -9,7 +9,9 @@ import {
   Briefcase,
   GraduationCap,
   Wallet,
+  Bitcoin,
   CheckSquare,
+  Fingerprint,
   LogOut,
   Download,
 } from "lucide-react";
@@ -23,7 +25,9 @@ const NAV_ITEMS = [
   { href: "/interviews", label: "Interviews", icon: Briefcase },
   { href: "/school", label: "School", icon: GraduationCap },
   { href: "/finance", label: "Money", icon: Wallet },
+  { href: "/crypto", label: "Crypto", icon: Bitcoin },
   { href: "/checklist", label: "Checklist", icon: CheckSquare },
+  { href: "/security", label: "Security", icon: Fingerprint },
 ];
 
 export function Nav() {

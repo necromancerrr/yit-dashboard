@@ -71,6 +71,39 @@ export interface ChecklistItem {
   created_at: string;
 }
 
+export interface ChecklistCompletion {
+  id: number;
+  item_id: number;
+  date: string;
+}
+
+export interface CryptoHolding {
+  id: number;
+  symbol: string;
+  name: string;
+  coin_id: string | null;
+  quantity: number;
+  staked_pct: number | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** A holding joined with its live price. Never persisted — computed per request. */
+export interface CryptoHoldingWithPrice extends CryptoHolding {
+  price_usd: number | null;
+  value_usd: number | null;
+  change_24h_pct: number | null;
+}
+
+/** A registered WebAuthn device. Key material is deliberately not exposed here. */
+export interface Passkey {
+  id: number;
+  label: string;
+  created_at: string;
+  last_used_at: string | null;
+}
+
 export interface HeatmapDay {
   date: string;
   count: number;
@@ -85,6 +118,8 @@ export interface SummaryData {
   monthIncome: number;
   monthExpense: number;
   monthNet: number;
+  cryptoValue: number;
+  cryptoCount: number;
   checklistDoneToday: number;
   checklistTotalToday: number;
   heatmap: HeatmapDay[];

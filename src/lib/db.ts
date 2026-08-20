@@ -112,6 +112,60 @@ CREATE TABLE IF NOT EXISTS checklist_items (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_checklist_category ON checklist_items(category);
+
+-- Permanent log of every day a checklist item was completed. The done/done_date
+-- columns above are only *current* state (and get cleared when a recurring
+-- habit rolls over to a new day), so history lives here instead — that's what
+-- the activity heatmap reads.
+CREATE TABLE IF NOT EXISTS checklist_completions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  item_id INTEGER NOT NULL,
+  date TEXT NOT NULL,
+  UNIQUE(item_id, date)
+);
+CREATE INDEX IF NOT EXISTS idx_checklist_completions_date ON checklist_completions(date);
+
+-- Crypto holdings. Deliberately stores the QUANTITY you own, never a dollar
+-- value: a stored value is stale the moment it is written. Worth is always
+-- derived as quantity x live price at read time.
+--
+-- coin_id is the price provider's identifier (e.g. "ethereum"). It is resolved
+-- from the symbol on first use and cached here, because symbols are ambiguous
+-- across chains and an id is not.
+CREATE TABLE IF NOT EXISTS crypto_holdings (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  symbol TEXT NOT NULL,
+  name TEXT NOT NULL,
+  coin_id TEXT,
+  quantity REAL NOT NULL,
+  staked_pct INTEGER,
+  notes TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_crypto_symbol ON crypto_holdings(symbol);
+
+-- Registered passkeys (WebAuthn credentials) for biometric sign-in.
+-- Note what is NOT here: no fingerprint, no face data, no password. Only the
+-- PUBLIC half of a keypair whose private half never leaves the device. A dump
+-- of this table lets an attacker verify signatures, never create them.
+CREATE TABLE IF NOT EXISTS passkeys (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  credential_id TEXT NOT NULL UNIQUE,
+  public_key TEXT NOT NULL,
+  counter INTEGER NOT NULL DEFAULT 0,
+  transports TEXT,
+  label TEXT NOT NULL DEFAULT 'Device',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  last_used_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_passkeys_credential ON passkeys(credential_id);
+
+-- Backfill for databases created before the completions table existed: seed it
+-- from whatever done_date each item is currently carrying. Idempotent (the
+-- UNIQUE constraint plus OR IGNORE), so it is safe to re-run on every boot.
+INSERT OR IGNORE INTO checklist_completions (item_id, date)
+  SELECT id, done_date FROM checklist_items WHERE done = 1 AND done_date IS NOT NULL;
 `;
 
 async function migrate(): Promise<void> {

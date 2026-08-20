@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { parseISODate, toISODate } from "@/lib/date";
 import type { HeatmapDay } from "@/lib/types";
 
 const HEAT_STEPS = ["var(--heat-0)", "var(--heat-1)", "var(--heat-2)", "var(--heat-3)", "var(--heat-4)", "var(--heat-5)"];
@@ -17,7 +18,7 @@ function levelFor(count: number, max: number): number {
 }
 
 function fmtDate(iso: string): string {
-  const d = new Date(iso + "T00:00:00");
+  const d = parseISODate(iso);
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 }
 
@@ -49,7 +50,7 @@ export function Heatmap({ data, weeks = 53 }: { data: HeatmapDay[]; weeks?: numb
       for (let d = 0; d < 7; d++) {
         const day = new Date(start);
         day.setDate(day.getDate() + w * 7 + d);
-        const iso = day.toISOString().slice(0, 10);
+        const iso = toISODate(day);
         const count = countByDate.get(iso) ?? 0;
         const inRange = day <= today;
         if (inRange) {
