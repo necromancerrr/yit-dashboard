@@ -267,6 +267,49 @@ describe("ingestion pipeline", () => {
     assert.equal((await statusOf(existingId)).status, "OA");
   });
 
+  test("legacy no-match inbox notices are upgraded into create proposals", async () => {
+    const external = await mod.db.execute({
+      sql: `INSERT INTO external_events
+              (provider, provider_message_id, thread_id, occurred_at, subject, sender, snippet, processing_status)
+            VALUES ('gmail', 'legacy-gs-001', 'legacy-gs-thread', '2026-08-20',
+                    'Goldman Sachs: Complete Your Technical Assessment',
+                    'noreply@hackerrank.com',
+                    'Please complete your online assessment for your application to Goldman Sachs.',
+                    'processed')
+            RETURNING id`,
+      args: [],
+    });
+    await mod.db.execute({
+      sql: `INSERT INTO inbox_items
+              (kind, title, detail, severity, external_event_id, dedupe_key)
+            VALUES ('unmatched_career_email',
+                    'gs — OA, but no matching application',
+                    'Goldman Sachs: Complete Your Technical Assessment · No existing application for gs',
+                    'attention', ?, 'ingest:unmatched:legacy-gs-thread')`,
+      args: [Number(external.rows[0].id)],
+    });
+    await mod.db.execute({
+      sql: "DELETE FROM schema_migrations WHERE name = ?",
+      args: ["2026-08-inbox-create-proposals-from-unmatched-email"],
+    });
+    (globalThis as typeof globalThis & { __dashboardDbReady?: Promise<void> }).__dashboardDbReady =
+      undefined;
+
+    await mod.ensureDb();
+
+    const [item] = await inboxItems();
+    assert.equal(item.title, "Create Goldman Sachs as OA?");
+    assert.equal(item.proposed_status, "OA");
+    assert.equal(item.proposed_company, "Goldman Sachs");
+
+    const response = await confirmInboxItem(item.id);
+    assert.equal(response.status, 200);
+    const apps = await mod.db.execute("SELECT company, status FROM applications");
+    assert.equal(apps.rows.length, 1);
+    assert.equal(apps.rows[0].company, "Goldman Sachs");
+    assert.equal(apps.rows[0].status, "OA");
+  });
+
   test("a job alert is ignored without reaching the matcher", async () => {
     await seedApplication("Meta", "SWE Intern");
     const out = await mod.ingestMessages("gmail", [

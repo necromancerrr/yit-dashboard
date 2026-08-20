@@ -1,6 +1,9 @@
 import { createClient, type Client } from "@libsql/client";
 import fs from "node:fs";
 import path from "node:path";
+import { classifyDeterministic } from "@/lib/ingest/classify";
+import { parseSender } from "@/lib/ingest/normalize";
+import type { ApplicationStatus } from "@/lib/types";
 
 const DEFAULT_LOCAL_PATH = path.join(process.cwd(), "db", "local.db");
 
@@ -391,6 +394,95 @@ async function ensureInboxProposalColumns(): Promise<void> {
   await ensureColumn("inbox_items", "proposed_next_action_date", "TEXT");
 }
 
+const APPLICATION_STATUSES: ApplicationStatus[] = [
+  "Applied",
+  "OA",
+  "Phone Screen",
+  "Technical",
+  "Onsite",
+  "Offer",
+  "Rejected",
+];
+
+function statusFromLegacyTitle(title: string): ApplicationStatus | null {
+  const found = APPLICATION_STATUSES.find((status) =>
+    new RegExp(`\\b${status.replace(" ", "\\s+")}\\b`, "i").test(title)
+  );
+  return found ?? null;
+}
+
+function companyFromLegacyTitle(title: string): string | null {
+  const match = /^(.+?)\s+[—-]\s+/.exec(title);
+  const company = match?.[1]?.trim();
+  if (!company || company.length < 2) return null;
+  return company;
+}
+
+/**
+ * PR #4 created "no matching application" notices before Inbox items carried
+ * proposed company/status fields. Those rows were already deduped through
+ * external_events, so a later sync correctly says "No new mail" and never
+ * revisits them. Upgrade them in place so the existing Inbox can be confirmed
+ * into Career rows instead of sitting there as un-actionable warnings.
+ */
+async function backfillInboxCreateProposals(): Promise<void> {
+  const legacy = await db.execute({
+    sql: `SELECT i.id, i.title, i.detail, e.provider_message_id, e.thread_id,
+                 e.occurred_at, e.subject, e.sender, e.snippet
+            FROM inbox_items i
+            LEFT JOIN external_events e ON e.id = i.external_event_id
+           WHERE i.kind = 'unmatched_career_email'
+             AND i.state = 'open'
+             AND i.proposed_status IS NULL`,
+    args: [],
+  });
+
+  for (const row of legacy.rows) {
+    const status = statusFromLegacyTitle(String(row.title ?? ""));
+    if (!status) continue;
+
+    const sender = parseSender(String(row.sender ?? ""));
+    const signal =
+      row.provider_message_id && row.subject
+        ? classifyDeterministic({
+            providerMessageId: String(row.provider_message_id),
+            threadId: (row.thread_id as string | null) ?? null,
+            receivedOn: (row.occurred_at as string | null) ?? new Date().toISOString().slice(0, 10),
+            subject: String(row.subject ?? ""),
+            senderName: sender.name,
+            senderEmail: sender.email,
+            snippet: String(row.snippet ?? ""),
+          })
+        : null;
+
+    const company = signal?.isCareerRelated
+      ? signal.company ?? companyFromLegacyTitle(String(row.title ?? ""))
+      : companyFromLegacyTitle(String(row.title ?? ""));
+    if (!company) continue;
+
+    const label = [company, signal?.isCareerRelated ? signal.role : null].filter(Boolean).join(" · ");
+    await db.execute({
+      sql: `UPDATE inbox_items
+               SET title = ?,
+                   proposed_status = ?,
+                   proposed_company = ?,
+                   proposed_role = ?,
+                   proposed_next_action_date = ?,
+                   confidence = COALESCE(confidence, ?)
+             WHERE id = ?`,
+      args: [
+        `Create ${label} as ${status}?`,
+        status,
+        company,
+        signal?.isCareerRelated ? signal.role : null,
+        signal?.isCareerRelated ? signal.deadline : null,
+        signal?.isCareerRelated ? signal.confidence : null,
+        row.id,
+      ],
+    });
+  }
+}
+
 async function migrate(): Promise<void> {
   // Strip `--` line comments before splitting on `;`. Prose explaining a table
   // will eventually contain a semicolon, and a naive split would slice that
@@ -404,6 +496,7 @@ async function migrate(): Promise<void> {
   }
   await ensureInboxProposalColumns();
   await runOnce("2026-08-applications-from-interviews", backfillApplicationsFromInterviews);
+  await runOnce("2026-08-inbox-create-proposals-from-unmatched-email", backfillInboxCreateProposals);
 }
 
 export function ensureDb(): Promise<void> {
