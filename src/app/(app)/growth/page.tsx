@@ -9,7 +9,8 @@ import { PageHeader } from "@/components/PageHeader";
 import { EmptyState } from "@/components/EmptyState";
 import { Modal } from "@/components/Modal";
 import { parseISODate, todayISO } from "@/lib/date";
-import type { LeetcodeLog } from "@/lib/types";
+import { Heatmap } from "@/components/Heatmap";
+import type { LeetcodeLog, SummaryData } from "@/lib/types";
 
 const DIFFICULTIES = ["Easy", "Medium", "Hard"] as const;
 
@@ -32,8 +33,11 @@ const emptyForm = {
   notes: "",
 };
 
-export default function LeetcodePage() {
+export default function GrowthPage() {
   const { data, isLoading, mutate } = useSWR<{ items: LeetcodeLog[] }>("/api/leetcode", fetcher);
+  // The activity heatmap spans gym, LeetCode and habits — it belongs to
+  // consistency, which is what Growth is about, rather than to Today.
+  const { data: summary } = useSWR<SummaryData>("/api/summary", fetcher);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<LeetcodeLog | null>(null);
   const [saving, setSaving] = useState(false);
@@ -101,7 +105,7 @@ export default function LeetcodePage() {
   return (
     <div>
       <PageHeader
-        title="LeetCode"
+        title="Growth"
         subtitle={`${items.length} problems solved`}
         action={
           <button className="btn btn-primary" onClick={openAdd}>
@@ -109,6 +113,16 @@ export default function LeetcodePage() {
           </button>
         }
       />
+
+      <div className="card p-4 sm:p-5 mb-4">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-sm font-semibold">Activity</h2>
+          <span className="text-xs" style={{ color: "var(--ink-muted)" }}>
+            Gym · LeetCode · Habits
+          </span>
+        </div>
+        <Heatmap data={summary?.heatmap ?? []} />
+      </div>
 
       <div className="grid grid-cols-3 gap-3 mb-4">
         {DIFFICULTIES.map((d) => (

@@ -59,7 +59,10 @@ src/
       auth/login  auth/logout
       auth/passkey/         # WebAuthn: login/ + register/ ceremonies, list, delete
       gym/ leetcode/ interviews/ school/ finance/ checklist/   # route.ts + [id]/route.ts
-      summary/route.ts    # aggregate numbers + heatmap for the overview
+      applications/       # route.ts + [id]/route.ts + [id]/events/route.ts
+      inbox/              # route.ts + [id]/route.ts (confirm / dismiss)
+      today/route.ts      # ranked attention list for the Today page
+      summary/route.ts    # aggregate numbers + heatmap (now read by Growth)
       export/route.ts     # every table as one downloadable JSON file
   components/             # Nav, Heatmap, StatCard, Modal, PageHeader, EmptyState, Logo, ToastProvider
   lib/
@@ -73,6 +76,10 @@ src/
     fetcher.ts            # SWR fetcher + apiPost / apiPatch / apiDelete
     identity.ts           # display/brand name from NEXT_PUBLIC_DISPLAY_NAME
     types.ts              # row interfaces mirroring the SQL schema
+    career-status.ts      # pipeline vocabulary + transition rules (pure, client-safe)
+    career.ts             # applyEvent() — the only writer of applications.status
+    inbox.ts              # derives inbox items from existing data (no email needed)
+    ai/                   # AIProvider interface + registry; server-only, optional
     useUndoableDelete.ts  # optimistic delete with a 5s undo window
   proxy.ts                # auth gate (Next.js 16 renamed middleware.ts → proxy.ts)
 scripts/hash-password.mjs
@@ -261,3 +268,69 @@ update `.env.example` when adding a variable.
 5. Copy a page from `src/app/(app)/gym/page.tsx` into `(app)/<name>/page.tsx`.
 6. Add the nav entry to `NAV_ITEMS` in `src/components/Nav.tsx` and a
    `--cat-<name>` color token in `globals.css`.
+
+
+## Yit OS concepts
+
+The dashboard is becoming a system that maintains a model of your life rather
+than a set of forms you fill in. Three ideas carry that, and changing them
+casually will break the guarantees the rest of the code depends on.
+
+### Applications are an event log, not a row you edit
+
+`applications.status` is a **cached projection** of `application_events`, which
+is append-only. `applyEvent()` in `src/lib/career.ts` is the only code that may
+write that column, and it appends the event and updates the cache together.
+
+**Never `UPDATE applications SET status`** anywhere else. The point of the log
+is that the timeline can always explain the status on the card — including a
+status something inferred wrongly and you later corrected.
+
+Transition rules live in `src/lib/career-status.ts` (pure, no DB, so the client
+shares the exact definitions the API enforces):
+
+- **User edits always win.** `source: "manual"` is applied unconditionally,
+  including moving backwards or reopening a closed application.
+- **Inference cannot walk an application backwards.** A late-arriving recruiter
+  reminder must not undo real progress — that is what `pipelineRank` is for.
+- **`status_locked`** is set the moment you choose a status by hand; inference
+  then leaves that application alone permanently.
+- **Terminal statuses** (`Rejected`, `Withdrawn`) are never left by inference.
+
+### The Inbox is derived, and deduplicated by situation
+
+`refreshDerivedInbox()` recomputes items from data already in the database
+(a stale application, a deadline inside the horizon) on read — there is one
+user, so the only moment it must be current is when it is looked at.
+
+`inbox_items.dedupe_key` encodes the **situation**, not the moment of noticing.
+That is what stops nagging: a still-stale application re-derives to the same
+key and updates its row instead of adding another, and a dismissed item stays
+dismissed. Any new producer must pick a key with the same property.
+
+### AI is additive and never required
+
+Everything under `src/lib/ai/` is optional. `getAIProvider()` returns `null`
+when unconfigured, every operation returns `null` on any failure, and every
+caller must already work without it. Provider choice is configuration
+(`AI_PROVIDER`); **no feature code may import a vendor SDK directly.**
+
+Two rules for anything added here:
+
+- **Structured or nothing.** Operations return Zod-validated shapes. Free-form
+  prose is never parsed into the database. `/api/import/screenshot` is the
+  precedent: it *proposes*, and an ordinary POST is what saves.
+- **Ranking is deterministic.** `/api/today` sorts by real dates in SQL. The
+  model only phrases facts that route already computed, so it cannot invent a
+  deadline you do not have.
+
+### Migrations: additive, and backfills run once
+
+`SCHEMA` re-executes on every boot, so everything in it must stay idempotent.
+A **backfill** is different — re-running one resurrects rows you deleted — so
+backfills go through `runOnce()`, keyed in `schema_migrations`.
+
+The `interviews` table is deliberately still there after the Career migration:
+it costs nothing, keeps the export complete, and makes the migration
+recoverable. Note that `migrate()` strips `--` comments before splitting on
+`;`, because comment prose eventually contains a semicolon.

@@ -3,13 +3,13 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
-  LayoutDashboard,
-  Dumbbell,
-  Code2,
+  Sun,
+  Inbox,
   Briefcase,
   GraduationCap,
+  HeartPulse,
   Wallet,
-  Bitcoin,
+  Sprout,
   CheckSquare,
   Fingerprint,
   LogOut,
@@ -18,17 +18,24 @@ import {
 import { Logo } from "@/components/Logo";
 import { getBrandName } from "@/lib/identity";
 
+// Yit OS areas, ordered by how often the day starts there. Career, School,
+// Health, Money and Growth are life areas; Today and Inbox are the two
+// system surfaces that cut across all of them.
 const NAV_ITEMS = [
-  { href: "/", label: "Overview", icon: LayoutDashboard },
-  { href: "/gym", label: "Gym", icon: Dumbbell },
-  { href: "/leetcode", label: "LeetCode", icon: Code2 },
-  { href: "/interviews", label: "Interviews", icon: Briefcase },
+  { href: "/", label: "Today", icon: Sun },
+  { href: "/inbox", label: "Inbox", icon: Inbox },
+  { href: "/career", label: "Career", icon: Briefcase },
   { href: "/school", label: "School", icon: GraduationCap },
-  { href: "/finance", label: "Money", icon: Wallet },
-  { href: "/crypto", label: "Crypto", icon: Bitcoin },
+  { href: "/health", label: "Health", icon: HeartPulse },
+  { href: "/money", label: "Money", icon: Wallet },
+  { href: "/growth", label: "Growth", icon: Sprout },
   { href: "/checklist", label: "Checklist", icon: CheckSquare },
   { href: "/security", label: "Security", icon: Fingerprint },
 ];
+
+// The bottom bar can't hold nine items legibly on a phone. These are the ones
+// worth a thumb; the rest stay reachable from the pages themselves.
+const MOBILE_NAV_HREFS = new Set(["/", "/inbox", "/career", "/school", "/money"]);
 
 export function Nav() {
   const pathname = usePathname();
@@ -97,7 +104,7 @@ export function Nav() {
         className="md:hidden fixed bottom-0 left-0 right-0 z-20 flex items-center justify-around border-t px-1 py-1.5 backdrop-blur"
         style={{ borderColor: "var(--border)", background: "rgba(13,13,13,0.85)" }}
       >
-        {NAV_ITEMS.map((item) => {
+        {NAV_ITEMS.filter((item) => MOBILE_NAV_HREFS.has(item.href)).map((item) => {
           const active = pathname === item.href;
           const Icon = item.icon;
           return (

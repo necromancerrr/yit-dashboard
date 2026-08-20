@@ -19,7 +19,7 @@ function fmt(iso: string) {
 
 const emptyForm = { date: todayISO(), workout_type: "Push", duration_min: "", notes: "" };
 
-export default function GymPage() {
+export default function HealthPage() {
   const { data, isLoading, mutate } = useSWR<{ items: GymLog[] }>("/api/gym", fetcher);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<GymLog | null>(null);
@@ -81,8 +81,8 @@ export default function GymPage() {
   return (
     <div>
       <PageHeader
-        title="Gym"
-        subtitle="Log workouts and keep your streak alive"
+        title="Health"
+        subtitle="Workouts and training consistency"
         action={
           <button className="btn btn-primary" onClick={openAdd}>
             <Plus size={15} /> Log workout
