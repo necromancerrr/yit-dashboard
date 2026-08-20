@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { handleRoute, withDb } from "@/lib/api-helpers";
-import { daysAgoISO, toISODate, todayISO } from "@/lib/date";
+import { daysAgoISO, shiftISODate, todayISO } from "@/lib/date";
 import { rolloverRecurringChecklist } from "@/lib/checklist";
 import type { HeatmapDay, SchoolTask } from "@/lib/types";
 
@@ -68,16 +68,12 @@ export async function GET() {
       // this morning doesn't zero it) with at least one gym log.
       const gymDateSet = new Set(gymDates.rows.map((r) => r.date as string));
       let streak = 0;
-      const cursor = new Date();
-      if (!gymDateSet.has(today)) cursor.setDate(cursor.getDate() - 1);
-      for (;;) {
-        const iso = toISODate(cursor);
-        if (gymDateSet.has(iso)) {
-          streak += 1;
-          cursor.setDate(cursor.getDate() - 1);
-        } else {
-          break;
-        }
+      // Walk backwards over calendar dates as strings, so the step is always
+      // exactly one day regardless of daylight-saving shifts.
+      let cursor = gymDateSet.has(today) ? today : shiftISODate(today, -1);
+      while (gymDateSet.has(cursor)) {
+        streak += 1;
+        cursor = shiftISODate(cursor, -1);
       }
 
       const monthIncome = Number(incomeRow.rows[0]?.s ?? 0);

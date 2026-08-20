@@ -143,7 +143,12 @@ exists. Mirror any change in `src/lib/types.ts` and in `/api/export`.
 UTC, not the user's day, and it silently files evening entries under tomorrow
 (or morning entries under yesterday, east of UTC). Use `src/lib/date.ts`:
 `todayISO()`, `toISODate(date)`, `daysAgoISO(n)`, `parseISODate(iso)`. On the
-server "local" means the server's timezone, so deployments set `TZ`.
+The day is resolved against `APP_TIMEZONE` (an IANA name) when that is set,
+and the machine's own timezone otherwise. It deliberately does **not** rely on
+`TZ`: Vercel reserves that variable name and always runs functions in UTC, so
+an app that trusts the process clock is unfixable there. Day arithmetic goes
+through `shiftISODate()`, which steps whole calendar days in UTC space so
+daylight-saving boundaries stay exactly one day wide.
 
 ### Checklist semantics
 `checklist_items.done` / `done_date` are *current* state;
@@ -225,7 +230,7 @@ metadata, `Nav`, the login page, and the generated icons. Keep it that way.
 | `APP_PASSWORD_HASH` | one of these | bcrypt hash (preferred) |
 | `APP_PASSWORD` | one of these | plaintext password (local only) |
 | `NEXT_PUBLIC_DISPLAY_NAME` | no | name in UI, defaults to "You" — **inlined at build time**, so Docker passes it as a build arg |
-| `TZ` | no | timezone the day rolls over in (streaks, "today", checklist reset) |
+| `APP_TIMEZONE` | no | IANA zone the day rolls over in (streaks, "today", checklist reset). Not `TZ` — reserved on Vercel |
 | `DATABASE_URL` | no | libSQL/Turso URL; defaults to local file |
 | `DATABASE_AUTH_TOKEN` | no | Turso token |
 

@@ -28,7 +28,7 @@ Edit `.env.local`:
 
 - `AUTH_SECRET` — any random string, 16+ characters (`openssl rand -base64 32`)
 - `APP_PASSWORD` — the password you'll type in to sign in (quick start)
-- `TZ` — your timezone (e.g. `America/New_York`). This decides when the day
+- `APP_TIMEZONE` — your timezone (e.g. `America/New_York`). This decides when the day
   rolls over for gym streaks, the heatmap, and the daily checklist reset;
   without it the app follows the machine's timezone, which is UTC on most
   hosts.
@@ -60,7 +60,7 @@ docker compose up -d --build
 
 The app will be on http://localhost:3000. For a real deployment, point your
 platform's "deploy from Dockerfile" flow at this repo and attach a persistent
-volume at `/app/db`. Set `TZ` too, and pass
+volume at `/app/db`. Set `APP_TIMEZONE` too, and pass
 `NEXT_PUBLIC_DISPLAY_NAME` as a *build argument* — it is compiled into the
 bundle, so setting it only at run time won't change the name on screen.
 
@@ -95,7 +95,7 @@ request that touches the database.
 | `AUTH_SECRET` | `openssl rand -base64 32` | 16+ chars, or the app refuses to start |
 | `APP_PASSWORD_HASH` | `node scripts/hash-password.mjs "pw"` | preferred once internet-facing |
 | `NEXT_PUBLIC_DISPLAY_NAME` | e.g. `Yit` | **see the warning below** |
-| `TZ` | e.g. `America/New_York` | Vercel runs in UTC otherwise |
+| `APP_TIMEZONE` | e.g. `America/New_York` | **not** `TZ` — see below |
 
 **3. Deploy.**
 
@@ -106,10 +106,13 @@ request that touches the database.
 read at run time. Set it *before* your first deploy, and **redeploy** after
 changing it — editing the variable alone will appear to do nothing.
 
-**Set `TZ`, or your day ends at the wrong time.** Gym streaks, the activity
-heatmap, and the daily checklist reset all key off the server's idea of
-"today". Vercel defaults to UTC, so without `TZ` a workout logged at 8pm
-Eastern is filed under tomorrow.
+**Set `APP_TIMEZONE`, not `TZ`.** Gym streaks, the activity heatmap, and the
+daily checklist reset all depend on when "today" ends. `TZ` is the usual way
+to tell a server that — but **Vercel reserves the name `TZ` and rejects it**,
+and runs every function in UTC regardless. So the app reads its own
+`APP_TIMEZONE` variable and resolves the date against that zone explicitly,
+which works on any host. Leave it unset and the machine's own timezone is
+used, which is what you want locally and in Docker.
 
 **Passkeys are bound to the exact domain.** WebAuthn ties every credential to
 the hostname it was created on, which is what makes it phishing-proof — and
