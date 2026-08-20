@@ -113,6 +113,26 @@ CREATE TABLE IF NOT EXISTS checklist_completions (
 );
 CREATE INDEX IF NOT EXISTS idx_checklist_completions_date ON checklist_completions(date);
 
+-- Crypto holdings. Deliberately stores the QUANTITY you own, never a dollar
+-- value: a stored value is stale the moment it is written. Worth is always
+-- derived as quantity x live price at read time.
+--
+-- coin_id is the price provider's identifier (e.g. "ethereum"). It is resolved
+-- from the symbol on first use and cached here, because symbols are ambiguous
+-- across chains and an id is not.
+CREATE TABLE IF NOT EXISTS crypto_holdings (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  symbol TEXT NOT NULL,
+  name TEXT NOT NULL,
+  coin_id TEXT,
+  quantity REAL NOT NULL,
+  staked_pct INTEGER,
+  notes TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_crypto_symbol ON crypto_holdings(symbol);
+
 -- Registered passkeys (WebAuthn credentials) for biometric sign-in.
 -- Note what is NOT here: no fingerprint, no face data, no password. Only the
 -- PUBLIC half of a keypair whose private half never leaves the device. A dump

@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { handleRoute, withDb } from "@/lib/api-helpers";
 import { daysAgoISO, shiftISODate, todayISO } from "@/lib/date";
 import { rolloverRecurringChecklist } from "@/lib/checklist";
+import { getPrices } from "@/lib/prices";
 import type { HeatmapDay, SchoolTask } from "@/lib/types";
 
 export async function GET() {
@@ -17,7 +18,7 @@ export async function GET() {
       const weekAgo = daysAgoISO(6);
       const monthStart = today.slice(0, 7) + "-01";
 
-      const [gymDates, leetcodeDates, checklistDates, leetcodeWeek, leetcodeTotal, upcomingInterviews, nextSchool, incomeRow, expenseRow, checklistToday] =
+      const [gymDates, leetcodeDates, checklistDates, leetcodeWeek, leetcodeTotal, upcomingInterviews, nextSchool, incomeRow, expenseRow, cryptoRows, checklistToday] =
         await Promise.all([
           db.execute({ sql: "SELECT DISTINCT date FROM gym_logs WHERE date >= ?", args: [yearAgo] }),
           db.execute({ sql: "SELECT DISTINCT date FROM leetcode_logs WHERE date >= ?", args: [yearAgo] }),
@@ -43,6 +44,7 @@ export async function GET() {
             sql: "SELECT COALESCE(SUM(amount),0) as s FROM finance_transactions WHERE type='expense' AND date >= ?",
             args: [monthStart],
           }),
+          db.execute("SELECT coin_id, quantity FROM crypto_holdings"),
           db.execute({
             sql: `SELECT COUNT(*) as total,
                          SUM(CASE WHEN done = 1 AND done_date = ? THEN 1 ELSE 0 END) as done
@@ -76,6 +78,21 @@ export async function GET() {
         cursor = shiftISODate(cursor, -1);
       }
 
+      // Crypto is part of the money picture, so it belongs on the overview —
+      // valued live, never from a stored number. A price outage degrades to
+      // zero rather than failing the whole summary.
+      const holdings = cryptoRows.rows as unknown as { coin_id: string | null; quantity: number }[];
+      let cryptoValue = 0;
+      try {
+        const prices = await getPrices(holdings.map((h) => h.coin_id ?? "").filter(Boolean));
+        cryptoValue = holdings.reduce((sum, h) => {
+          const price = h.coin_id ? prices.get(h.coin_id) : undefined;
+          return sum + (price ? price.usd * h.quantity : 0);
+        }, 0);
+      } catch (err) {
+        console.warn("Crypto valuation unavailable for summary:", err);
+      }
+
       const monthIncome = Number(incomeRow.rows[0]?.s ?? 0);
       const monthExpense = Number(expenseRow.rows[0]?.s ?? 0);
 
@@ -88,6 +105,8 @@ export async function GET() {
         monthIncome,
         monthExpense,
         monthNet: monthIncome - monthExpense,
+        cryptoValue,
+        cryptoCount: holdings.length,
         checklistDoneToday: Number(checklistToday.rows[0]?.done ?? 0),
         checklistTotalToday: Number(checklistToday.rows[0]?.total ?? 0),
         heatmap,
