@@ -72,15 +72,63 @@ automatically.
 ### Option B — Vercel (serverless) + Turso
 
 Vercel's filesystem is ephemeral, so a local SQLite file won't persist there.
-Instead, use [Turso](https://turso.tech) (free tier, SQLite-compatible,
-built on the same libSQL client this app already uses — no code changes):
+Use [Turso](https://turso.tech) (free tier, SQLite-compatible, built on the
+same libSQL client this app already uses — **no code changes**).
 
-1. `turso db create yit-dashboard`
-2. `turso db show yit-dashboard --url` → set as `DATABASE_URL`
-3. `turso db tokens create yit-dashboard` → set as `DATABASE_AUTH_TOKEN`
-4. Import the repo into Vercel, add `DATABASE_URL`, `DATABASE_AUTH_TOKEN`,
-   `AUTH_SECRET`, and `APP_PASSWORD` (or `APP_PASSWORD_HASH`) as environment
-   variables, and deploy.
+**1. Create the database**
+
+```bash
+turso db create yit-dashboard
+turso db show yit-dashboard --url      # -> DATABASE_URL
+turso db tokens create yit-dashboard   # -> DATABASE_AUTH_TOKEN
+```
+
+There is no migration step to run: the tables are created on the first
+request that touches the database.
+
+**2. Import the repo into Vercel and set these environment variables**
+
+| Variable | Value | Notes |
+| --- | --- | --- |
+| `DATABASE_URL` | from `turso db show` | starts `libsql://` |
+| `DATABASE_AUTH_TOKEN` | from `turso db tokens create` | |
+| `AUTH_SECRET` | `openssl rand -base64 32` | 16+ chars, or the app refuses to start |
+| `APP_PASSWORD_HASH` | `node scripts/hash-password.mjs "pw"` | preferred once internet-facing |
+| `NEXT_PUBLIC_DISPLAY_NAME` | e.g. `Yit` | **see the warning below** |
+| `TZ` | e.g. `America/New_York` | Vercel runs in UTC otherwise |
+
+**3. Deploy.**
+
+#### Three things that will bite you
+
+**`NEXT_PUBLIC_DISPLAY_NAME` is baked in at build time.** Anything prefixed
+`NEXT_PUBLIC_` is substituted into the JavaScript bundle by `next build`, not
+read at run time. Set it *before* your first deploy, and **redeploy** after
+changing it — editing the variable alone will appear to do nothing.
+
+**Set `TZ`, or your day ends at the wrong time.** Gym streaks, the activity
+heatmap, and the daily checklist reset all key off the server's idea of
+"today". Vercel defaults to UTC, so without `TZ` a workout logged at 8pm
+Eastern is filed under tomorrow.
+
+**Passkeys are bound to the exact domain.** WebAuthn ties every credential to
+the hostname it was created on, which is what makes it phishing-proof — and
+also means a passkey registered on a `*-git-branch.vercel.app` preview URL
+will **not** work on your production domain. Register your devices on the
+domain you actually use. If you later add a custom domain, re-register them
+there. Passkeys also require HTTPS, which Vercel gives you automatically.
+
+### Putting it on your phone
+
+Once deployed, open the site on your phone:
+
+- **iPhone** — Safari → Share → *Add to Home Screen*
+- **Android** — Chrome → ⋮ → *Install app*
+
+It launches without browser chrome, with its own icon. Then sign in with your
+password once, go to **Security → Add this device**, and after that you can
+sign in with Face ID / Touch ID / your fingerprint. Keep the password safe: it
+is the way back in if you lose every registered device.
 
 ## Pushing this to GitHub
 
@@ -125,9 +173,14 @@ scripts/hash-password.mjs  # generate APP_PASSWORD_HASH
 
 ## Extending it
 
-Everything lives in seven SQLite tables (`gym_logs`, `leetcode_logs`,
-`interviews`, `school_tasks`, `finance_transactions`, `checklist_items`, and
-`checklist_completions`, the per-day log behind the heatmap) —
-see `src/lib/db.ts` for the schema. Add a column or table there, add a route
-in `src/app/api/`, and a page/component to surface it; the pattern is the
-same across every section.
+Everything lives in eight SQLite tables (`gym_logs`, `leetcode_logs`,
+`interviews`, `school_tasks`, `finance_transactions`, `checklist_items`,
+`checklist_completions` — the per-day log behind the heatmap — and `passkeys`
+for biometric sign-in). See `src/lib/db.ts` for the schema. Add a column or
+table there, add a route in `src/app/api/`, and a page/component to surface
+it; the pattern is the same across every section.
+
+Note that the SQL is written in SQLite's dialect (`AUTOINCREMENT`,
+`datetime('now')`, `INSERT OR IGNORE`, `?` placeholders). That is what makes
+Turso a drop-in and what a move to Postgres would have to translate — roughly
+60 query sites across the API routes.
