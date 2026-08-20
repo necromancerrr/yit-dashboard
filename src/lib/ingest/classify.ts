@@ -182,6 +182,7 @@ export function extractDeadline(text: string, receivedOn: string): string | null
  */
 export function extractCompanyFromText(text: string): string | null {
   const patterns = [
+    /^([A-Z][\w&.\-]*(?:[ \t]+[A-Z][\w&.\-]*){0,3})\s*:\s+(?:complete|start|take|schedule|your|invitation|assessment|interview)\b/,
     /\b(?:your application (?:to|at|with)|applying (?:to|at|with)|position (?:at|with)|role (?:at|with)|interview (?:at|with)|assessment for)\s+([A-Z][\w&.\-]*(?:[ \t]+[A-Z][\w&.\-]*){0,3})/,
     /\b([A-Z][\w&.\-]*(?:[ \t]+[A-Z][\w&.\-]*){0,3})\s+(?:has invited you|invites you|would like to invite you)/,
   ];
@@ -190,6 +191,7 @@ export function extractCompanyFromText(text: string): string | null {
     if (match) {
       const candidate = match[1]
         .replace(/\b(?:Online|Assessment|Coding|Interview|Team|Recruiting|Talent)\b.*$/, "")
+        .replace(/[.,;:!?]+$/, "")
         .trim();
       if (candidate.length > 1) return candidate;
     }
