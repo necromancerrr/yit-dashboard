@@ -46,11 +46,14 @@ export async function POST(req: NextRequest) {
     const body = createSchema.parse(await req.json());
     return withDb(async () => {
       const appliedDate = body.applied_date ?? todayISO();
+      // status_locked stays 0: picking a starting status is filing an
+      // application, not correcting one, so it must not stop this application
+      // from advancing on its own later.
       const result = await db.execute({
         sql: `INSERT INTO applications
                 (company, role, status, applied_date, next_action_date, next_action_label,
                  location, url, notes, source, status_locked, last_activity_date)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'manual', 1, ?)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'manual', 0, ?)
               RETURNING *`,
         args: [
           body.company,

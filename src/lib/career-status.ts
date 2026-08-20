@@ -57,23 +57,39 @@ export interface TransitionDecision {
   reason: string;
 }
 
+export interface TransitionContext {
+  /** 'manual' for something you did by hand; anything else is inference. */
+  source: string;
+  /**
+   * Date of your most recent *hand-made status decision* on this application,
+   * if there is one. Application creation does not count — choosing a starting
+   * status is not a correction, and must not stop the pipeline from advancing.
+   */
+  lastManualStatusOn?: string | null;
+  /** Date of the evidence behind this transition (the email's own date). */
+  occurredOn?: string | null;
+}
+
 /**
  * Decide whether an *inferred* status change should be applied.
  *
  * This is only consulted for non-manual sources. Anything you do by hand is
  * applied unconditionally: user edits always win over inference, including
  * edits that move an application backwards or reopen a closed one.
+ *
+ * Note what deliberately does *not* exist here: a permanent lock. Touching an
+ * application by hand must not switch its automation off forever — an
+ * application you created yourself as "Applied" still has to advance to OA on
+ * its own. What a manual decision earns is precedence over *older* evidence,
+ * which is what the staleness check below expresses.
  */
 export function evaluateTransition(
   current: string,
   proposed: string,
-  opts: { statusLocked: boolean; source: string }
+  opts: TransitionContext
 ): TransitionDecision {
   if (opts.source === "manual") {
     return { accepted: true, reason: "Manual edit" };
-  }
-  if (opts.statusLocked) {
-    return { accepted: false, reason: "Status was set by hand; inference cannot override it" };
   }
   if (current === proposed) {
     return { accepted: false, reason: "Already in that status" };
@@ -81,6 +97,24 @@ export function evaluateTransition(
   if (isTerminal(current)) {
     return { accepted: false, reason: `Application is ${current.toLowerCase()}; reopen it yourself` };
   }
+
+  // A correction beats the evidence that caused the mistake. If you moved this
+  // application by hand on the 10th, a recruiter email dated the 8th is the
+  // very message you were correcting, and re-applying it would silently undo
+  // you. Strictly older, not same-day: dates have no time component, so
+  // blocking same-day evidence would also block a genuinely new email that
+  // happened to arrive on a day you edited.
+  if (
+    opts.lastManualStatusOn &&
+    opts.occurredOn &&
+    opts.occurredOn < opts.lastManualStatusOn
+  ) {
+    return {
+      accepted: false,
+      reason: "Older than your last manual status change; not undoing your correction",
+    };
+  }
+
   if (isTerminal(proposed)) {
     return { accepted: true, reason: "Closing the application" };
   }

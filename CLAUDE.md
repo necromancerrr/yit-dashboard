@@ -293,8 +293,12 @@ shares the exact definitions the API enforces):
   including moving backwards or reopening a closed application.
 - **Inference cannot walk an application backwards.** A late-arriving recruiter
   reminder must not undo real progress — that is what `pipelineRank` is for.
-- **`status_locked`** is set the moment you choose a status by hand; inference
-  then leaves that application alone permanently.
+- **A manual decision beats older evidence, not all future evidence.** The
+  guard compares the incoming event's date against the date of your last
+  hand-made `status_change` in the log, so the email that caused a mistake
+  cannot re-apply it — while an application you created yourself still
+  advances on its own. `status_locked` records that you edited by hand; it is
+  deliberately *not* a permanent switch.
 - **Terminal statuses** (`Rejected`, `Withdrawn`) are never left by inference.
 
 ### The Inbox is derived, and deduplicated by situation

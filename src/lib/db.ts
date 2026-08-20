@@ -199,8 +199,9 @@ CREATE TABLE IF NOT EXISTS applications (
   notes TEXT,
   -- Where this row came from: 'manual', or a provider like 'gmail'.
   source TEXT NOT NULL DEFAULT 'manual',
-  -- Set when you edit the status by hand. Ingestion must not overwrite a
-  -- status you chose yourself — user edits always beat inference.
+  -- Set to 1 once you change the status by hand. A record that you did, not a
+  -- gate: whether inference may act is decided from application_events dates,
+  -- so touching an application never disables its automation for good.
   status_locked INTEGER NOT NULL DEFAULT 0,
   -- Date of the most recent event, so "nothing has moved in 16 days" is a
   -- plain column comparison rather than a correlated subquery per row.

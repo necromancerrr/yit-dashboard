@@ -152,7 +152,11 @@ export interface Application {
   url: string | null;
   notes: string | null;
   source: string;
-  /** 1 once you set the status by hand; ingestion then leaves it alone. */
+  /**
+   * 1 once you have changed the status by hand. A record that you did, not a
+   * gate: precedence over inference is decided from the event log's dates, so
+   * touching an application never switches its automation off permanently.
+   */
   status_locked: 0 | 1;
   last_activity_date: string | null;
   created_at: string;
