@@ -62,6 +62,13 @@ export async function applyEvent(input: ApplyEventInput): Promise<{
   // you filing an application, not correcting one.
   const lastManualStatusOn = current.rows[0].last_manual_status_on as string | null;
 
+  // A status_change that changes nothing is not an event. Recording one would
+  // put a second "-> OA" on the timeline every time a recruiter re-sent the
+  // same reminder, turning the history into a delivery log.
+  if (input.kind === "status_change" && input.toStatus === currentStatus) {
+    return { applied: false, reason: "Already in that status" };
+  }
+
   const wantsStatusChange =
     input.kind === "status_change" && !!input.toStatus && input.toStatus !== currentStatus;
 

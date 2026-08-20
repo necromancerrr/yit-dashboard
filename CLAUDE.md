@@ -62,6 +62,8 @@ src/
       applications/       # route.ts + [id]/route.ts + [id]/events/route.ts
       inbox/              # route.ts + [id]/route.ts (confirm / dismiss)
       today/route.ts      # ranked attention list for the Today page
+      ingest/sync/route.ts # pull new mail and run the ingestion pipeline
+      integrations/route.ts # connection state for external accounts
       summary/route.ts    # aggregate numbers + heatmap (now read by Growth)
       export/route.ts     # every table as one downloadable JSON file
   components/             # Nav, Heatmap, StatCard, Modal, PageHeader, EmptyState, Logo, ToastProvider
@@ -80,6 +82,12 @@ src/
     career.ts             # applyEvent() — the only writer of applications.status
     inbox.ts              # derives inbox items from existing data (no email needed)
     ai/                   # AIProvider interface + registry; server-only, optional
+    ingest/               # mail -> classify -> match -> propose/apply
+      normalize.ts        #   pure string work (forwards, senders, companies)
+      classify.ts         #   deterministic rules; null means "ask the model"
+      match.ts            #   which application a message belongs to
+      pipeline.ts         #   orchestration + dedupe (the only db writer here)
+      gmail.ts            #   Gmail REST client; metadata only, never bodies
     useUndoableDelete.ts  # optimistic delete with a 5s undo window
   proxy.ts                # auth gate (Next.js 16 renamed middleware.ts → proxy.ts)
 scripts/hash-password.mjs
@@ -338,3 +346,48 @@ The `interviews` table is deliberately still there after the Career migration:
 it costs nothing, keeps the export complete, and makes the migration
 recoverable. Note that `migrate()` strips `--` comments before splitting on
 `;`, because comment prose eventually contains a semicolon.
+
+
+## Email ingestion
+
+`src/lib/ingest/` turns recruiting mail into Career events. Four rules hold it
+together, and each exists because of a specific way this goes wrong.
+
+**Rules first, model second.** `classifyDeterministic()` reads templated
+recruiting mail with regexes. It returns `null` to mean *"this needs
+judgement"* — that null is the only thing that triggers an AI call. A definite
+`isCareerRelated: false` is never escalated. Rules are free, offline, identical
+every run, and testable against fixtures; a model is none of those.
+
+**Ingestion never creates applications.** A message about a company with no
+application becomes an inbox question. Inferring rows from email would let one
+mis-parse invent a job you never applied for.
+
+**Auto-apply is narrow.** Only deterministic signals, above the confidence bar,
+with an unambiguous match, are written straight through — and `applyEvent()`
+still guards them. Anything AI-derived, ambiguous, or low-confidence becomes a
+proposal you confirm. A refusal by the guard is surfaced as an inbox item, not
+silently dropped.
+
+**Deduplication happens before classification.** `external_events` has
+`UNIQUE(provider, provider_message_id)`, and `ingestMessages()` skips a message
+that conflicts before any work is done. Combined with `dedupe_key` on proposals
+and the no-op guard in `applyEvent()`, a recruiter who sends the same reminder
+four times produces one timeline entry and one inbox item.
+
+Privacy is a fetch-time property, not a storage-time one: Gmail is queried with
+`format=metadata`, so bodies never arrive in the first place. Snippets are
+clamped by `truncateSnippet()`. `integrations` stores no tokens — credentials
+live in the environment, because `/api/export` dumps tables to a file.
+
+## Tests
+
+`npm test` runs `node:test` through `tsx` (which resolves the `@/` alias).
+
+- `tests/fixtures/emails.ts` — realistic recruiting mail. Add a fixture here
+  when you meet a template the rules get wrong; it is the regression suite for
+  classification.
+- `tests/pipeline.test.ts` runs the real pipeline against a temporary SQLite
+  file. `DATABASE_URL` is set *before* importing `@/lib/db`, since that module
+  resolves it once at load, and `AI_PROVIDER=none` keeps the tests
+  deterministic.
