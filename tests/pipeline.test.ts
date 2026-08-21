@@ -93,6 +93,16 @@ async function confirmInboxItem(id: number) {
   );
 }
 
+async function editInboxItem(id: number, body: Record<string, unknown>) {
+  return mod.patchInbox(
+    new NextRequest(`http://localhost/api/inbox/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+    { params: Promise.resolve({ id: String(id) }) }
+  );
+}
+
 before(async () => {
   const dbMod = await import("@/lib/db");
   const pipeline = await import("@/lib/ingest/pipeline");
@@ -243,6 +253,36 @@ describe("ingestion pipeline", () => {
     assert.equal(events.rows[0].to_status, "Applied");
     assert.equal(events.rows[0].source, "gmail");
     assert.ok(events.rows[0].external_event_id, "created event links to the email");
+  });
+
+  test("a proposal can be corrected before it creates an application", async () => {
+    await mod.ingestMessages("gmail", [
+      msg({
+        providerMessageId: "ats-incorrect-001",
+        threadId: "ats-incorrect-thread",
+        subject: "Thank you for applying to SAP",
+        senderEmail: "notifications@successfactors.com",
+        senderName: "SAP SuccessFactors",
+        snippet: "We received your application for the iXp Software Engineer Intern role.",
+      }),
+    ]);
+    const [item] = await inboxItems();
+
+    const edited = await editInboxItem(item.id, {
+      proposed_company: "SAP",
+      proposed_role: "iXp Software Engineer Intern",
+      proposed_status: "Applied",
+      proposed_next_action_date: null,
+    });
+    assert.equal(edited.status, 200);
+
+    const response = await confirmInboxItem(item.id);
+    assert.equal(response.status, 200);
+    const apps = await mod.db.execute("SELECT company, role, status FROM applications");
+    assert.equal(apps.rows.length, 1);
+    assert.equal(apps.rows[0].company, "SAP");
+    assert.equal(apps.rows[0].role, "iXp Software Engineer Intern");
+    assert.equal(apps.rows[0].status, "Applied");
   });
 
   test("confirming a create proposal rematches first to avoid duplicates", async () => {

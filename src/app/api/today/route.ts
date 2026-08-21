@@ -6,6 +6,7 @@ import { rolloverRecurringChecklist } from "@/lib/checklist";
 import { refreshDerivedInbox, daysBetween, relativeDay } from "@/lib/inbox";
 import { getPrices } from "@/lib/prices";
 import { getAIProvider } from "@/lib/ai";
+import { buildTodayBriefingFacts } from "@/lib/today-briefing";
 import type { TodayItem } from "@/lib/types";
 
 /**
@@ -38,8 +39,19 @@ export async function GET(req: NextRequest) {
       await rolloverRecurringChecklist(today);
       await refreshDerivedInbox(today);
 
-      const [school, career, checklist, inboxCount, gymDates, income, expense, holdings] =
-        await Promise.all([
+      const [
+        school,
+        career,
+        checklist,
+        inboxCount,
+        openInbox,
+        careerStatuses,
+        schoolOpenCount,
+        gymDates,
+        income,
+        expense,
+        holdings,
+      ] = await Promise.all([
           db.execute({
             sql: `SELECT id, course, title, due_date FROM school_tasks
                   WHERE status != 'Done' AND due_date IS NOT NULL AND due_date <= ?
@@ -61,6 +73,21 @@ export async function GET(req: NextRequest) {
             args: [today],
           }),
           db.execute("SELECT COUNT(*) AS c FROM inbox_items WHERE state = 'open'"),
+          db.execute({
+            sql: `SELECT title, detail, severity FROM inbox_items
+                  WHERE state = 'open'
+                  ORDER BY CASE severity
+                    WHEN 'urgent' THEN 0 WHEN 'attention' THEN 1 ELSE 2 END,
+                    created_at ASC
+                  LIMIT 6`,
+            args: [],
+          }),
+          db.execute({
+            sql: `SELECT status, COUNT(*) AS c FROM applications
+                  GROUP BY status ORDER BY c DESC`,
+            args: [],
+          }),
+          db.execute("SELECT COUNT(*) AS c FROM school_tasks WHERE status != 'Done'"),
           db.execute({
             sql: "SELECT DISTINCT date FROM gym_logs WHERE date >= ?",
             args: [shiftISODate(today, -365)],
@@ -149,6 +176,7 @@ export async function GET(req: NextRequest) {
       }
 
       const monthNet = Number(income.rows[0]?.s ?? 0) - Number(expense.rows[0]?.s ?? 0);
+      const openCount = Number(inboxCount.rows[0]?.c ?? 0);
 
       // The briefing is additive. When no provider is configured this is null
       // and the page renders its ranked list exactly as it otherwise would.
@@ -156,16 +184,34 @@ export async function GET(req: NextRequest) {
       if (req.nextUrl.searchParams.get("briefing") === "1") {
         const provider = getAIProvider();
         if (provider) {
-          briefing = await provider.summarizeToday(
-            items.slice(0, 6).map((i) => ({ title: i.title, detail: i.detail }))
-          );
+          const facts = buildTodayBriefingFacts({
+            date: today,
+            priorities: items,
+            inboxOpenCount: openCount,
+            inboxItems: openInbox.rows.map((row) => ({
+              title: row.title as string,
+              detail: (row.detail as string | null) ?? null,
+              severity: row.severity as string,
+            })),
+            careerStatuses: careerStatuses.rows.map((row) => ({
+              status: row.status as string,
+              count: Number(row.c),
+            })),
+            schoolOpenCount: Number(schoolOpenCount.rows[0]?.c ?? 0),
+            checklistDone,
+            checklistTotal,
+            gymStreak: streak,
+            monthNet,
+            cryptoValue,
+          });
+          briefing = await provider.summarizeToday(facts);
         }
       }
 
       return NextResponse.json({
         date: today,
         items: items.slice(0, 8),
-        inboxOpenCount: Number(inboxCount.rows[0]?.c ?? 0),
+        inboxOpenCount: openCount,
         gymStreak: streak,
         checklistDoneToday: checklistDone,
         checklistTotalToday: checklistTotal,
