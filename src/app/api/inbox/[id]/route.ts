@@ -7,9 +7,22 @@ import { todayISO } from "@/lib/date";
 import { matchApplication, type MatchCandidate } from "@/lib/ingest/match";
 import type { ApplicationStatus } from "@/lib/types";
 
-const updateSchema = z.object({
-  state: z.enum(["open", "confirmed", "dismissed"]),
-});
+const statusSchema = z.enum(ALL_STATUSES as [ApplicationStatus, ...ApplicationStatus[]]);
+const updateSchema = z
+  .object({
+    state: z.enum(["open", "confirmed", "dismissed"]).optional(),
+    proposed_company: z.string().trim().min(1).max(160).nullable().optional(),
+    proposed_role: z.string().trim().max(240).nullable().optional(),
+    proposed_status: statusSchema.nullable().optional(),
+    proposed_next_action_date: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/)
+      .nullable()
+      .optional(),
+  })
+  .refine((body) => Object.values(body).some((value) => value !== undefined), {
+    message: "No changes supplied",
+  });
 
 async function matchExistingApplication(
   company: string,
@@ -124,7 +137,69 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       });
       if (existing.rows.length === 0) return jsonError("Not found", 404);
 
-      const item = existing.rows[0];
+      const hasProposalEdits =
+        body.proposed_company !== undefined ||
+        body.proposed_role !== undefined ||
+        body.proposed_status !== undefined ||
+        body.proposed_next_action_date !== undefined;
+
+      if (hasProposalEdits) {
+        await db.execute({
+          sql: `UPDATE inbox_items SET
+                  proposed_company = CASE WHEN ? = 1 THEN ? ELSE proposed_company END,
+                  proposed_role = CASE WHEN ? = 1 THEN ? ELSE proposed_role END,
+                  proposed_status = CASE WHEN ? = 1 THEN ? ELSE proposed_status END,
+                  proposed_next_action_date = CASE
+                    WHEN ? = 1 THEN ? ELSE proposed_next_action_date END
+                WHERE id = ?`,
+          args: [
+            body.proposed_company !== undefined ? 1 : 0,
+            body.proposed_company ?? null,
+            body.proposed_role !== undefined ? 1 : 0,
+            body.proposed_role ?? null,
+            body.proposed_status !== undefined ? 1 : 0,
+            body.proposed_status ?? null,
+            body.proposed_next_action_date !== undefined ? 1 : 0,
+            body.proposed_next_action_date ?? null,
+            id,
+          ],
+        });
+      }
+
+      let current = await db.execute({ sql: "SELECT * FROM inbox_items WHERE id = ?", args: [id] });
+      let item = current.rows[0];
+
+      if (hasProposalEdits && item.proposed_status) {
+        const application = item.application_id
+          ? await db.execute({
+              sql: "SELECT company, role FROM applications WHERE id = ?",
+              args: [Number(item.application_id)],
+            })
+          : null;
+        const applicationRow = application?.rows[0];
+        const company =
+          (applicationRow?.company as string | null) ??
+          (item.proposed_company as string | null) ??
+          "an employer";
+        const roleName =
+          (item.proposed_role as string | null) ??
+          (applicationRow?.role as string | null) ??
+          null;
+        const role = roleName ? ` · ${roleName}` : "";
+        const title = item.application_id
+          ? `${company}${role} — move to ${item.proposed_status as string}?`
+          : `Create ${company}${role} as ${item.proposed_status as string}?`;
+        await db.execute({
+          sql: "UPDATE inbox_items SET title = ? WHERE id = ?",
+          args: [title, id],
+        });
+        current = await db.execute({ sql: "SELECT * FROM inbox_items WHERE id = ?", args: [id] });
+        item = current.rows[0];
+      }
+
+      if (!body.state) {
+        return NextResponse.json({ item });
+      }
 
       if (body.state === "confirmed" && item.proposed_status && item.application_id) {
         await applyEvent({
@@ -140,16 +215,18 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       if (
         body.state === "confirmed" &&
         item.proposed_status &&
-        !item.application_id &&
-        item.proposed_company
+        !item.application_id
       ) {
-        const applicationId = await createApplicationFromInboxItem(item);
-        if (applicationId) {
-          await db.execute({
-            sql: "UPDATE inbox_items SET application_id = ? WHERE id = ?",
-            args: [applicationId, id],
-          });
+        const company = (item.proposed_company as string | null)?.trim();
+        if (!company || /^an? employer$/i.test(company)) {
+          return jsonError("Correct the employer before confirming this proposal.", 400);
         }
+        const applicationId = await createApplicationFromInboxItem(item);
+        if (!applicationId) return jsonError("This proposal could not create an application.", 400);
+        await db.execute({
+          sql: "UPDATE inbox_items SET application_id = ? WHERE id = ?",
+          args: [applicationId, id],
+        });
       }
 
       await db.execute({
