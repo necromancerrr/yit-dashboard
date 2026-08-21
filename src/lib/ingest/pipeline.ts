@@ -3,6 +3,7 @@ import { applyEvent } from "@/lib/career";
 import { getAIProvider } from "@/lib/ai";
 import { classifyDeterministic, AUTO_APPLY_MIN_CONFIDENCE } from "@/lib/ingest/classify";
 import { matchApplication, type MatchCandidate } from "@/lib/ingest/match";
+import { classifyDomain, type DomainSignal } from "@/lib/ingest/domains";
 import { companyFromDomain, senderDomain, truncateSnippet } from "@/lib/ingest/normalize";
 import type { CareerSignal, IngestOutcome, NormalizedMessage } from "@/lib/ingest/types";
 import type { ApplicationStatus } from "@/lib/types";
@@ -27,6 +28,8 @@ export const SYNC_BATCH_LIMIT = 50;
 interface ProcessResult {
   outcome: "applied" | "proposed" | "ignored";
   detail: string;
+  /** Set for non-career outcomes, so counters can tell them apart. */
+  domain?: "school" | "money";
 }
 
 function displayCompany(signalCompany: string | null, message: NormalizedMessage): string | null {
@@ -95,13 +98,15 @@ async function raiseInboxItem(params: {
   proposedNextActionDate?: string | null;
   confidence: number;
   dedupeKey: string;
+  domain?: string | null;
+  proposedPayload?: unknown;
 }): Promise<void> {
   await db.execute({
     sql: `INSERT INTO inbox_items
             (kind, title, detail, severity, application_id, external_event_id,
              proposed_status, proposed_company, proposed_role, proposed_next_action_date,
-             confidence, dedupe_key)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             confidence, dedupe_key, domain, proposed_payload)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(dedupe_key) DO UPDATE SET
             title = excluded.title,
             detail = excluded.detail,
@@ -109,7 +114,9 @@ async function raiseInboxItem(params: {
             proposed_company = excluded.proposed_company,
             proposed_role = excluded.proposed_role,
             proposed_next_action_date = excluded.proposed_next_action_date,
-            confidence = excluded.confidence`,
+            confidence = excluded.confidence,
+            domain = excluded.domain,
+            proposed_payload = excluded.proposed_payload`,
     args: [
       params.kind,
       params.title,
@@ -123,8 +130,66 @@ async function raiseInboxItem(params: {
       params.proposedNextActionDate ?? null,
       params.confidence,
       params.dedupeKey,
+      params.domain ?? null,
+      params.proposedPayload === undefined ? null : JSON.stringify(params.proposedPayload),
     ],
   });
+}
+
+/**
+ * Raise a non-career proposal.
+ *
+ * Nothing is written to school_tasks or finance_transactions here — the same
+ * "propose before create" rule that governs Career applies to every domain.
+ * Confirming the inbox item is what creates the row.
+ *
+ * The dedupe key encodes the *situation*, not the moment of noticing: the same
+ * receipt re-derives to the same key and updates its row rather than stacking
+ * a second copy, and one you dismissed stays dismissed.
+ */
+async function proposeLifeItem(
+  message: NormalizedMessage,
+  externalEventId: number,
+  life: DomainSignal
+): Promise<ProcessResult> {
+  if (life.domain === "school" && life.school) {
+    const { course, title, dueDate } = life.school;
+    await raiseInboxItem({
+      kind: "school_proposal",
+      title: title.toLowerCase().startsWith(course.toLowerCase()) ? title : `${course}: ${title}`,
+      detail: dueDate ? `Due ${dueDate}. ${life.reason}` : `No date stated. ${life.reason}`,
+      severity: dueDate ? "attention" : "info",
+      applicationId: null,
+      externalEventId,
+      proposedStatus: null,
+      proposedNextActionDate: dueDate,
+      confidence: life.confidence,
+      dedupeKey: `school:${course}:${title.slice(0, 40)}:${dueDate ?? "nodate"}`.toLowerCase(),
+      domain: "school",
+      proposedPayload: life.school,
+    });
+    return { outcome: "proposed", detail: `School: ${course}`, domain: "school" };
+  }
+
+  if (life.domain === "money" && life.money) {
+    const { category, amount, date, type } = life.money;
+    await raiseInboxItem({
+      kind: "money_proposal",
+      title: `${type === "income" ? "+" : "-"}$${amount.toFixed(2)} ${category}`,
+      detail: `${life.reason}. Dated ${date}.`,
+      severity: "info",
+      applicationId: null,
+      externalEventId,
+      proposedStatus: null,
+      confidence: life.confidence,
+      dedupeKey: `money:${category}:${amount.toFixed(2)}:${date}`.toLowerCase(),
+      domain: "money",
+      proposedPayload: life.money,
+    });
+    return { outcome: "proposed", detail: `Money: ${category}`, domain: "money" };
+  }
+
+  return { outcome: "ignored", detail: "Unrecognized domain" };
 }
 
 async function processMessage(
@@ -134,6 +199,11 @@ async function processMessage(
   const signal = await classify(message);
 
   if (!signal || !signal.isCareerRelated || !signal.status) {
+    // Not recruiting mail. Before discarding it, ask the wider question: most
+    // of what arrives every day is a receipt or a course deadline, and both
+    // already have a table waiting for them.
+    const life = classifyDomain(message);
+    if (life) return proposeLifeItem(message, externalEventId, life);
     return { outcome: "ignored", detail: signal?.reasoning ?? "No career signal" };
   }
 
@@ -316,7 +386,10 @@ export async function ingestMessages(
     if (result.outcome === "applied") outcome.applied += 1;
     else if (result.outcome === "proposed") outcome.proposed += 1;
     else outcome.ignored += 1;
-    if (result.outcome !== "ignored") outcome.career += 1;
+    // Only career outcomes count as career. A receipt is a proposal too, but
+    // counting it here would quietly inflate the one number that means
+    // "recruiting mail seen".
+    if (result.outcome !== "ignored" && !result.domain) outcome.career += 1;
 
     await db.execute({
       sql: `UPDATE external_events

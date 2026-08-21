@@ -412,6 +412,36 @@ Privacy is a fetch-time property, not a storage-time one: Gmail is queried with
 clamped by `truncateSnippet()`. `integrations` stores no tokens — credentials
 live in the environment, because `/api/export` dumps tables to a file.
 
+## Everyday ingestion (beyond Career)
+
+Ingestion originally asked one question — *"what does this say about a job
+application?"* — and discarded everything else. Most of what actually arrives
+each day is a receipt or a course deadline, and both already have a table.
+
+`src/lib/ingest/domains.ts` runs **after** the career classifier declines, and
+routes a message to a `LifeDomain` (`school` | `money`) with a domain-shaped
+payload. It follows the same contracts as the career path:
+
+- **Rules first, model second.** `classifyDomain()` returns `null` to mean
+  "needs judgement" rather than guessing. Career keeps its own path untouched.
+- **Propose before create.** Nothing is written to `school_tasks` or
+  `finance_transactions` by the sync. The proposal lands in the Inbox and
+  *confirming* it creates the row, in `api/inbox/[id]/route.ts`.
+- **Dedupe by situation.** Keys are `school:<course>:<title>:<due>` and
+  `money:<merchant>:<amount>:<date>` — the same receipt re-derives to the same
+  key and updates in place, so a resent email never stacks a second copy.
+- **Never compute a date.** `extractDate()` reads only dates written in the
+  text; "due Friday" and "in two weeks" deliberately return `null`. A wrong
+  deadline is worse than none, because you plan around it without questioning.
+- **No amount, no transaction.** A money proposal without a number is dropped
+  rather than guessed.
+
+`inbox_items` carries `domain` + `proposed_payload` (JSON) rather than a column
+per domain. The payload is re-validated with Zod on confirm — it originated in
+an email, and the schema is what stands between a malformed proposal and your
+ledger. Both columns are added via `ensureColumn()`, not `SCHEMA`: an
+`ALTER TABLE` inside `SCHEMA` would throw on the second boot.
+
 ## Tests
 
 `npm test` runs `node:test` through `tsx` (which resolves the `@/` alias).
