@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { handleRoute, jsonError, todayISO } from "@/lib/api-helpers";
 import { getPrices, resolveCoinId } from "@/lib/prices";
-import { getAIProvider } from "@/lib/ai";
+import { getVisionProvider } from "@/lib/ai";
 import type { ScreenshotCrypto, ScreenshotTransactions } from "@/lib/ai/types";
 
 // Turns a screenshot into rows you could have typed yourself.
@@ -13,7 +13,7 @@ import type { ScreenshotCrypto, ScreenshotTransactions } from "@/lib/ai/types";
 // committing its output silently would mean discovering an error weeks later
 // in a number you had started to trust.
 //
-// The model is reached through getAIProvider(), never a vendor SDK: provider
+// The model is reached through the registry, never a vendor SDK: provider
 // choice is configuration (AI_PROVIDER), and this route used to be the one
 // place in the codebase that broke that rule.
 
@@ -32,16 +32,14 @@ function parseDataUrl(dataUrl: string): { mediaType: string; base64: string } | 
 
 export async function POST(req: NextRequest) {
   return handleRoute(async () => {
-    const provider = getAIProvider();
+    // Vision falls back to a provider that has eyes, so the cheap text provider
+    // stays configured for everything else. Null means nothing available can
+    // see — a different problem from a screenshot that could not be read, and
+    // one with a different fix.
+    const provider = getVisionProvider();
     if (!provider) {
-      return jsonError("Screenshot import needs an AI provider — set AI_PROVIDER and its API key.", 503);
-    }
-    // Distinguishing "no provider" from "provider can't see" matters: the two
-    // have completely different fixes, and a generic failure would send you
-    // hunting for a bad screenshot when the model simply has no eyes.
-    if (!provider.supportsVision) {
       return jsonError(
-        `The configured AI provider (${provider.name}) can't read images. Set AI_PROVIDER=anthropic, or name a vision-capable model in DEEPSEEK_VISION_MODEL.`,
+        "No AI provider available that can read images. Set ANTHROPIC_API_KEY, or name a vision-capable model in DEEPSEEK_VISION_MODEL.",
         503
       );
     }

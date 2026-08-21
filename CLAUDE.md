@@ -353,6 +353,12 @@ Two rules for anything added here:
   model only phrases facts that route already computed, so it cannot invent a
   deadline you do not have.
 
+`getVisionProvider()` is the entry point for image work. `AI_PROVIDER` picks one
+provider for everything, but vision is the one capability a provider can simply
+lack — so image operations fall back to a vision-capable provider while every
+text feature stays on the configured (cheaper) one. `AI_PROVIDER=none` is still
+honoured absolutely; an explicit opt-out is never overridden.
+
 `AIProvider` declares `supportsVision` alongside its operations.
 `extractFromScreenshot()` powers `/api/import/screenshot`; DeepSeek's chat
 models are text-only, so that provider reports `supportsVision: false` unless
