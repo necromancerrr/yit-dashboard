@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { applyEvent } from "@/lib/career";
-import { getAIProvider } from "@/lib/ai";
-import { classifyDeterministic, AUTO_APPLY_MIN_CONFIDENCE } from "@/lib/ingest/classify";
+import { AUTO_APPLY_MIN_CONFIDENCE } from "@/lib/ingest/classify";
+import { classifyCareerMessage } from "@/lib/ingest/classify-with-ai";
 import { matchApplication, type MatchCandidate } from "@/lib/ingest/match";
 import { companyFromDomain, senderDomain, truncateSnippet } from "@/lib/ingest/normalize";
 import type { CareerSignal, IngestOutcome, NormalizedMessage } from "@/lib/ingest/types";
@@ -42,44 +42,6 @@ function displayCompany(signalCompany: string | null, message: NormalizedMessage
     return senderName;
   }
   return signalCompany;
-}
-
-/**
- * Classify with rules first, and only escalate genuine gaps to the model.
- *
- * Rules answer most recruiting mail correctly and for free. A null from them
- * means "this needs judgement", which is exactly and only when a model earns
- * its round trip. A definite `isCareerRelated: false` is not escalated — the
- * rules are certain, and asking anyway would just spend money to agree.
- */
-async function classify(message: NormalizedMessage): Promise<CareerSignal | null> {
-  const deterministic = classifyDeterministic(message);
-  if (deterministic) return deterministic;
-
-  const provider = getAIProvider();
-  if (!provider) return null;
-
-  const result = await provider.classifyCareerEmail({
-    subject: message.subject,
-    sender: message.senderEmail ?? message.senderName ?? "unknown",
-    snippet: message.snippet,
-    receivedOn: message.receivedOn,
-  });
-  if (!result) return null;
-
-  return {
-    isCareerRelated: result.isCareerRelated,
-    company: result.company,
-    role: result.role,
-    status: result.proposedStatus,
-    // Deadlines are never taken from the classifier: extractCareerEvent is the
-    // operation that reads dates, and an invented deadline would go straight
-    // to the top of Today.
-    deadline: null,
-    confidence: result.confidence,
-    method: "ai",
-    reasoning: result.reasoning,
-  };
 }
 
 async function raiseInboxItem(params: {
@@ -131,7 +93,7 @@ async function processMessage(
   message: NormalizedMessage,
   externalEventId: number
 ): Promise<ProcessResult> {
-  const signal = await classify(message);
+  const signal = await classifyCareerMessage(message);
 
   if (!signal || !signal.isCareerRelated || !signal.status) {
     return { outcome: "ignored", detail: signal?.reasoning ?? "No career signal" };
