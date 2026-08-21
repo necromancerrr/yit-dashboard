@@ -9,6 +9,7 @@ import {
   Flame,
   Inbox as InboxIcon,
   ArrowRight,
+  Sparkles,
 } from "lucide-react";
 import { fetcher } from "@/lib/fetcher";
 import { PageHeader } from "@/components/PageHeader";
@@ -97,6 +98,10 @@ export default function TodayPage() {
   const { data, isLoading } = useSWR<TodayData>("/api/today", fetcher, {
     refreshInterval: 60_000,
   });
+  const { data: briefingData } = useSWR<TodayData>("/api/today?briefing=1", fetcher, {
+    refreshInterval: 10 * 60_000,
+    dedupingInterval: 5 * 60_000,
+  });
 
   const items = data?.items ?? [];
 
@@ -153,11 +158,13 @@ export default function TodayPage() {
       {/* The briefing is only rendered when a provider actually produced one.
           No placeholder, no "AI unavailable" chrome — the page is complete
           without it. */}
-      {data?.briefing && (
+      {briefingData?.briefing && (
         <div className="card p-4 mb-4">
-          <p className="label mb-1.5">Suggested focus</p>
+          <p className="label mb-1.5 flex items-center gap-1.5">
+            <Sparkles size={12} /> DeepSeek brief
+          </p>
           <p className="text-sm" style={{ color: "var(--ink-secondary)" }}>
-            {data.briefing}
+            {briefingData.briefing}
           </p>
         </div>
       )}

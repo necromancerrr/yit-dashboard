@@ -26,12 +26,15 @@ Rules:
 - If no date is present, return null. A wrong deadline is worse than no deadline.
 - Keep the summary factual and under 20 words.`;
 
-const BRIEFING_SYSTEM = `You write a two-sentence focus note for a personal dashboard.
+const BRIEFING_SYSTEM = `You write a two- or three-sentence action brief for a personal dashboard.
 
 You are given a list of facts already computed from the user's own data.
 - Use ONLY those facts. Never add a task, deadline, or number that is not listed.
-- Say which to do first and why, plainly. No greetings, no motivational filler.
-- If the list is empty, say the day looks clear.`;
+- Name at most three concrete actions, ordered by urgency.
+- Prioritize overdue or due-soon work, then urgent Inbox decisions and career updates.
+- An open Inbox means the day is not clear, even when no dated deadline is due.
+- Treat streaks, balances, and status counts as context, not invented tasks.
+- Be plain and concise. No greeting, motivational filler, or mention of being an AI.`;
 
 /**
  * Anthropic-backed provider.
