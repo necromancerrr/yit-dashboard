@@ -43,3 +43,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Scratch git worktrees created when running background agents. These are full
+# checkouts of this same repo, so committing them would nest the repository
+# inside itself. Only the worktrees are ignored — .claude/ also holds project
+# config (settings, skills, agents) that is worth committing.
+/.claude/worktrees/
