@@ -8,6 +8,12 @@ import { useUndoableDelete } from "@/lib/useUndoableDelete";
 import { EmptyState } from "@/components/EmptyState";
 import { Modal } from "@/components/Modal";
 import { parseISODate, todayISO } from "@/lib/date";
+import {
+  PERIODS,
+  summarizePeriod,
+  percentChange,
+  type PeriodId,
+} from "@/lib/money-period";
 import type { FinanceTransaction } from "@/lib/types";
 
 const EXPENSE_CATEGORIES = ["Rent", "Groceries", "Dining", "Transport", "Subscriptions", "Fun", "School", "Other"];
@@ -21,10 +27,65 @@ function currency(n: number) {
   return n.toLocaleString(undefined, { style: "currency", currency: "USD" });
 }
 
+/**
+ * "You spent $890" is trivia. "$890, up 31% on last month" is the thing that
+ * changes what you do next — so every card carries its own comparison, or
+ * says nothing at all.
+ *
+ * `direction` exists because up is not universally good: more income is
+ * progress and more spending is not, and colouring both green would make the
+ * whole row meaningless.
+ */
+function Comparison({
+  current,
+  previous,
+  label,
+  moreIsBetter,
+}: {
+  current: number;
+  previous: number | null;
+  label: string | null;
+  moreIsBetter: boolean;
+}) {
+  if (previous === null || label === null) return null;
+  const change = percentChange(current, previous);
+  // Null means the previous period was zero, where a percentage would be a
+  // made-up number wearing the clothes of a measurement.
+  if (change === null) {
+    return (
+      <p className="text-xs mt-0.5" style={{ color: "var(--ink-muted)" }}>
+        nothing in {label}
+      </p>
+    );
+  }
+  if (change === 0) {
+    return (
+      <p className="text-xs mt-0.5" style={{ color: "var(--ink-muted)" }}>
+        level with {label}
+      </p>
+    );
+  }
+  const better = change > 0 === moreIsBetter;
+  return (
+    <p
+      className="text-xs mt-0.5"
+      style={{ color: better ? "var(--good)" : "var(--warning)" }}
+    >
+      {change > 0 ? "↑" : "↓"} {Math.abs(change)}% vs {label}
+    </p>
+  );
+}
+
 const emptyForm = { date: todayISO(), type: "expense" as "income" | "expense", category: "Groceries", amount: "", note: "" };
 
 export function TransactionsPanel() {
-  const { data, isLoading, mutate } = useSWR<{ items: FinanceTransaction[] }>("/api/finance", fetcher);
+  const { data, isLoading, mutate } = useSWR<{ items: FinanceTransaction[] }>(
+    // The default limit is 300. Totals computed over a truncated ledger are
+    // silently wrong — "All time" would quietly mean "the most recent 300" —
+    // and this is one person's transactions, not a feed.
+    "/api/finance?limit=5000",
+    fetcher
+  );
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<FinanceTransaction | null>(null);
   const [saving, setSaving] = useState(false);
@@ -38,22 +99,31 @@ export function TransactionsPanel() {
     onCommitted: () => mutate(),
   });
 
-  const { income, expense, byCategory } = useMemo(() => {
-    let income = 0;
-    let expense = 0;
-    const byCategory = new Map<string, number>();
-    for (const t of items) {
-      if (t.type === "income") income += t.amount;
-      else {
-        expense += t.amount;
-        byCategory.set(t.category, (byCategory.get(t.category) ?? 0) + t.amount);
-      }
-    }
-    const sorted = Array.from(byCategory.entries()).sort((a, b) => b[1] - a[1]).slice(0, 6);
-    return { income, expense, byCategory: sorted };
-  }, [items]);
+  // These cards used to total every row the list had loaded — up to three
+  // hundred, reaching back however far that went — while the empty state
+  // promised a "monthly picture". A figure with no period attached is not a
+  // wrong figure, it is one you cannot act on.
+  const [period, setPeriod] = useState<PeriodId>("month");
+  const today = todayISO();
+  const summary = useMemo(
+    () => summarizePeriod(items, period, today),
+    [items, period, today]
+  );
+  const { income, expense, byCategory } = summary;
+  const periodOption = PERIODS.find((p) => p.id === period)!;
 
   const maxCategory = byCategory.length ? byCategory[0][1] : 0;
+
+  // The list follows the period too, so the control means one thing rather
+  // than two: cards for this month above a ledger going back years reads as a
+  // bug even when both halves are correct.
+  const visible = useMemo(
+    () =>
+      summary.range
+        ? items.filter((t) => t.date >= summary.range!.from && t.date <= summary.range!.to)
+        : items,
+    [items, summary.range]
+  );
 
   function openAdd() {
     setEditing(null);
@@ -99,7 +169,31 @@ export function TransactionsPanel() {
 
   return (
     <div>
-      <div className="flex justify-end mb-4">
+      <div className="flex items-center justify-between gap-3 mb-4">
+        <div
+          className="flex gap-1 p-1 rounded-lg"
+          role="group"
+          aria-label="Summary period"
+        >
+          {PERIODS.map((p) => {
+            const active = p.id === period;
+            return (
+              <button
+                key={p.id}
+                onClick={() => setPeriod(p.id)}
+                aria-pressed={active}
+                className="px-2.5 py-1 rounded-md text-xs transition-colors"
+                style={{
+                  background: active ? "var(--surface-raised)" : "transparent",
+                  color: active ? "var(--ink-primary)" : "var(--ink-muted)",
+                  fontWeight: active ? 600 : 500,
+                }}
+              >
+                {p.label}
+              </button>
+            );
+          })}
+        </div>
         <button className="btn btn-primary" onClick={openAdd}>
           <Plus size={15} /> Add transaction
         </button>
@@ -114,6 +208,12 @@ export function TransactionsPanel() {
           <p className="text-xl font-semibold" style={{ fontVariantNumeric: "tabular-nums" }}>
             {currency(income)}
           </p>
+          <Comparison
+            current={income}
+            previous={summary.previous?.income ?? null}
+            label={periodOption.previousLabel}
+            moreIsBetter
+          />
         </div>
         <div className="card p-4">
           <div className="flex items-center gap-2 mb-1">
@@ -123,6 +223,12 @@ export function TransactionsPanel() {
           <p className="text-xl font-semibold" style={{ fontVariantNumeric: "tabular-nums" }}>
             {currency(expense)}
           </p>
+          <Comparison
+            current={expense}
+            previous={summary.previous?.expense ?? null}
+            label={periodOption.previousLabel}
+            moreIsBetter={false}
+          />
         </div>
         <div className="card p-4 col-span-2 lg:col-span-1">
           <div className="flex items-center gap-2 mb-1">
@@ -135,12 +241,23 @@ export function TransactionsPanel() {
           >
             {currency(income - expense)}
           </p>
+          <Comparison
+            current={summary.net}
+            previous={summary.previous?.net ?? null}
+            label={periodOption.previousLabel}
+            moreIsBetter
+          />
         </div>
       </div>
 
       {byCategory.length > 0 && (
         <div className="card p-4 mb-4">
-          <h2 className="text-sm font-semibold mb-3">Top spending categories</h2>
+          <h2 className="text-sm font-semibold mb-3">
+            Top spending &middot;{" "}
+            <span style={{ color: "var(--ink-muted)", fontWeight: 500 }}>
+              {periodOption.label.toLowerCase()}
+            </span>
+          </h2>
           <div className="flex flex-col gap-2.5">
             {byCategory.map(([cat, amt]) => (
               <div key={cat} className="flex items-center gap-3">
@@ -167,11 +284,19 @@ export function TransactionsPanel() {
           <div className="p-8 text-center text-sm" style={{ color: "var(--ink-muted)" }}>
             Loading…
           </div>
-        ) : items.length === 0 ? (
-          <EmptyState icon={Wallet} title="No transactions yet" sub="Add your first income or expense to see your monthly picture." />
+        ) : visible.length === 0 ? (
+          <EmptyState
+            icon={Wallet}
+            title={items.length === 0 ? "No transactions yet" : `Nothing in ${periodOption.label.toLowerCase()}`}
+            sub={
+              items.length === 0
+                ? "Add your first income or expense to see where your money goes."
+                : "You have transactions in other periods — switch the range above."
+            }
+          />
         ) : (
           <ul className="divide-y" style={{ borderColor: "var(--border)" }}>
-            {items.map((t) => (
+            {visible.map((t) => (
               <li key={t.id} className="flex items-center justify-between gap-3 px-4 py-3 group">
                 <button
                   onClick={() => openEdit(t)}
