@@ -110,6 +110,8 @@ export interface HeatmapDay {
 }
 
 export interface SummaryData {
+  /** The day this payload was computed against, resolved in APP_TIMEZONE. */
+  date: string;
   gymStreak: number;
   leetcodeThisWeek: number;
   leetcodeTotal: number;

@@ -15,6 +15,7 @@ import {
 import { fetcher, apiPatch } from "@/lib/fetcher";
 import { PageHeader } from "@/components/PageHeader";
 import { getDisplayName } from "@/lib/identity";
+import { parseISODate } from "@/lib/date";
 import type { TodayData, TodayItem } from "@/lib/types";
 import { QuickAdd } from "./QuickAdd";
 import { SetupNotice } from "@/components/SetupNotice";
@@ -45,6 +46,11 @@ const KIND_COLOR = {
   habit: "var(--cat-gym)",
 } as const;
 
+/**
+ * The greeting follows the *reader's* clock rather than APP_TIMEZONE, and that
+ * is not an oversight: "good evening" is about the person, while the date
+ * below it is about the data.
+ */
 function greeting(): string {
   const h = new Date().getHours();
   if (h < 12) return "Good morning";
@@ -182,11 +188,19 @@ export default function TodayPage() {
     <div>
       <PageHeader
         title={`${greeting()}, ${getDisplayName()}`}
-        subtitle={new Date().toLocaleDateString(undefined, {
-          weekday: "long",
-          month: "long",
-          day: "numeric",
-        })}
+        // The server's day, not the browser's. Every date on this page —
+        // what counts as due today, when the checklist rolled over — is
+        // resolved against APP_TIMEZONE, and a heading that disagrees with the
+        // list underneath it is the app calling itself a liar.
+        subtitle={
+          data
+            ? parseISODate(data.date).toLocaleDateString(undefined, {
+                weekday: "long",
+                month: "long",
+                day: "numeric",
+              })
+            : "\u00a0"
+        }
       />
 
       {/* Capture, before attention: the cheapest moment to record something is

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { handleRoute, withDb } from "@/lib/api-helpers";
 import { shiftISODate, todayISO } from "@/lib/date";
+import { monthRange } from "@/lib/money-period";
 import { rolloverRecurringChecklist } from "@/lib/checklist";
 import { refreshDerivedInbox, daysBetween, relativeDay } from "@/lib/inbox";
 import { getPrices } from "@/lib/prices";
@@ -51,6 +52,10 @@ export async function GET(req: NextRequest) {
     return withDb(async () => {
       const today = todayISO();
       const horizon = shiftISODate(today, HORIZON_DAYS);
+      // Bounded at both ends. The add form accepts any date, so an unbounded
+      // `date >= <month>-01` counts a transaction dated next year toward this
+      // month — and keeps counting it every month until it arrives.
+      const month = monthRange(today);
 
       await rolloverRecurringChecklist(today);
       await refreshDerivedInbox(today);
@@ -81,13 +86,13 @@ export async function GET(req: NextRequest) {
           }),
           db.execute({
             sql: `SELECT COALESCE(SUM(amount),0) AS s FROM finance_transactions
-                  WHERE type='income' AND date >= ?`,
-            args: [today.slice(0, 7) + "-01"],
+                  WHERE type='income' AND date >= ? AND date <= ?`,
+            args: [month.from, month.to],
           }),
           db.execute({
             sql: `SELECT COALESCE(SUM(amount),0) AS s FROM finance_transactions
-                  WHERE type='expense' AND date >= ?`,
-            args: [today.slice(0, 7) + "-01"],
+                  WHERE type='expense' AND date >= ? AND date <= ?`,
+            args: [month.from, month.to],
           }),
           db.execute("SELECT coin_id, quantity FROM crypto_holdings"),
         ]);

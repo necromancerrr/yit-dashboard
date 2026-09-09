@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { handleRoute, withDb } from "@/lib/api-helpers";
+import { monthRange } from "@/lib/money-period";
 import { daysAgoISO, shiftISODate, todayISO } from "@/lib/date";
 import { rolloverRecurringChecklist } from "@/lib/checklist";
 import { getPrices } from "@/lib/prices";
@@ -16,7 +17,10 @@ export async function GET() {
 
       const yearAgo = daysAgoISO(364);
       const weekAgo = daysAgoISO(6);
-      const monthStart = today.slice(0, 7) + "-01";
+      // Bounded at both ends: the add form accepts any date, and an unbounded
+      // `date >= <month>-01` counts a transaction dated next year toward this
+      // month, every month, until it arrives.
+      const month = monthRange(today);
 
       const [gymDates, leetcodeDates, checklistDates, leetcodeWeek, leetcodeTotal, upcomingInterviews, nextSchool, incomeRow, expenseRow, cryptoRows, checklistToday] =
         await Promise.all([
@@ -37,12 +41,12 @@ export async function GET() {
             args: [today],
           }),
           db.execute({
-            sql: "SELECT COALESCE(SUM(amount),0) as s FROM finance_transactions WHERE type='income' AND date >= ?",
-            args: [monthStart],
+            sql: "SELECT COALESCE(SUM(amount),0) as s FROM finance_transactions WHERE type='income' AND date >= ? AND date <= ?",
+            args: [month.from, month.to],
           }),
           db.execute({
-            sql: "SELECT COALESCE(SUM(amount),0) as s FROM finance_transactions WHERE type='expense' AND date >= ?",
-            args: [monthStart],
+            sql: "SELECT COALESCE(SUM(amount),0) as s FROM finance_transactions WHERE type='expense' AND date >= ? AND date <= ?",
+            args: [month.from, month.to],
           }),
           db.execute("SELECT coin_id, quantity FROM crypto_holdings"),
           db.execute({
@@ -97,6 +101,9 @@ export async function GET() {
       const monthExpense = Number(expenseRow.rows[0]?.s ?? 0);
 
       return NextResponse.json({
+        // The day the rest of this payload was computed against, so the
+        // heatmap anchors its final column on the same clock as its counts.
+        date: today,
         gymStreak: streak,
         leetcodeThisWeek: Number(leetcodeWeek.rows[0]?.c ?? 0),
         leetcodeTotal: Number(leetcodeTotal.rows[0]?.c ?? 0),
