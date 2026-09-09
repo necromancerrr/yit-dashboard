@@ -154,6 +154,53 @@ describe("Today lists habits individually", () => {
   });
 });
 
+describe("monthNet counts this month, and only this month", () => {
+  /**
+   * The add form accepts any date. An unbounded `date >= <month>-01` counts a
+   * transaction dated next year toward this month — and keeps counting it
+   * every month until it finally arrives.
+   */
+  async function spend(date: string, amount: number) {
+    await db.execute({
+      sql: "INSERT INTO finance_transactions (date, type, category, amount) VALUES (?,?,?,?)",
+      args: [date, "expense", "Rent", amount],
+    });
+  }
+
+  test("a transaction dated in a future month is not this month's spending", async () => {
+    const { shiftISODate } = await import("@/lib/date");
+    const today = todayISO();
+    await spend(today, 100);
+    // Comfortably into a later month, whatever today is.
+    await spend(shiftISODate(today, 45), 5000);
+
+    const data = await fetchToday();
+    assert.equal(data.monthNet, -100);
+  });
+
+  test("last month's spending is not this month's either", async () => {
+    const { shiftISODate } = await import("@/lib/date");
+    const today = todayISO();
+    await spend(today, 100);
+    await spend(shiftISODate(today, -45), 5000);
+
+    const data = await fetchToday();
+    assert.equal(data.monthNet, -100);
+  });
+
+  test("income and expense net out within the month", async () => {
+    const today = todayISO();
+    await db.execute({
+      sql: "INSERT INTO finance_transactions (date, type, category, amount) VALUES (?,?,?,?)",
+      args: [today, "income", "Paycheck", 500],
+    });
+    await spend(today, 120);
+
+    const data = await fetchToday();
+    assert.equal(data.monthNet, 380);
+  });
+});
+
 describe("Today's ranking", () => {
   test("something due today outranks a habit, which outranks tomorrow", async () => {
     await addHabit("Read 20 pages");

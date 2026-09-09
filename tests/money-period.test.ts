@@ -2,6 +2,7 @@ import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  monthRange,
   periodRanges,
   summarizePeriod,
   percentChange,
@@ -50,6 +51,22 @@ describe("periodRanges", () => {
 
   test("all time has no window and nothing to compare against", () => {
     assert.deepEqual(periodRanges("all", "2026-03-14"), { current: null, previous: null });
+  });
+});
+
+describe("monthRange", () => {
+  test("is inclusive at both ends of the calendar month", () => {
+    assert.deepEqual(monthRange("2026-03-14"), { from: "2026-03-01", to: "2026-03-31" });
+    assert.deepEqual(monthRange("2026-04-01"), { from: "2026-04-01", to: "2026-04-30" });
+    assert.deepEqual(monthRange("2026-02-28"), { from: "2026-02-01", to: "2026-02-28" });
+    assert.deepEqual(monthRange("2028-02-01"), { from: "2028-02-01", to: "2028-02-29" });
+    assert.deepEqual(monthRange("2026-12-31"), { from: "2026-12-01", to: "2026-12-31" });
+  });
+
+  test("agrees with the month period, so the API and the UI cannot disagree", () => {
+    for (const day of ["2026-01-01", "2026-02-14", "2026-06-30", "2026-12-25"]) {
+      assert.deepEqual(monthRange(day), periodRanges("month", day).current);
+    }
   });
 });
 

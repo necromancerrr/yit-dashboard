@@ -94,6 +94,17 @@ function shiftDays(iso: string, days: number): string {
  * blocks: February against January is the comparison a person means, even
  * though one is three days shorter.
  */
+/**
+ * The calendar month `today` falls in, inclusive at both ends.
+ *
+ * Exported separately from `periodRanges` because the API routes want a range
+ * that definitely exists — "all time" has none — and a non-null assertion at
+ * every call site is a worse answer than a function with a narrower type.
+ */
+export function monthRange(today: string): { from: string; to: string } {
+  return { from: startOfMonth(today), to: endOfMonth(today) };
+}
+
 export function periodRanges(period: PeriodId, today: string): {
   current: { from: string; to: string } | null;
   previous: { from: string; to: string } | null;
@@ -101,10 +112,9 @@ export function periodRanges(period: PeriodId, today: string): {
   if (period === "all") return { current: null, previous: null };
 
   if (period === "month") {
-    const from = startOfMonth(today);
     const prevFrom = shiftMonth(today, -1);
     return {
-      current: { from, to: endOfMonth(today) },
+      current: monthRange(today),
       previous: { from: prevFrom, to: endOfMonth(prevFrom) },
     };
   }

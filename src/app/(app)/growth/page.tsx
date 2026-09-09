@@ -121,7 +121,7 @@ export default function GrowthPage() {
             Gym · LeetCode · Habits
           </span>
         </div>
-        <Heatmap data={summary?.heatmap ?? []} />
+        <Heatmap data={summary?.heatmap ?? []} today={summary?.date} />
       </div>
 
       <div className="grid grid-cols-3 gap-3 mb-4">
