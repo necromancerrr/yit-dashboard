@@ -81,6 +81,8 @@ src/
     checklist.ts          # daily rollover for recurring habits
     webauthn.ts           # passkey relying-party + challenge cookie helpers
     useWebAuthnSupport.ts # useSyncExternalStore probe for browser support
+    useWebAuthnAutofillSupport.ts # same pattern, for conditional-UI support
+    passkey-errors.ts     # WebAuthnError -> message, or null to stay silent
     fetcher.ts            # SWR fetcher + apiPost / apiPatch / apiDelete
     identity.ts           # display/brand name from NEXT_PUBLIC_DISPLAY_NAME
     types.ts              # row interfaces mirroring the SQL schema
@@ -128,6 +130,20 @@ routes — options (issue a challenge) then verify (check the signature):
   device requires already being signed in with the password.
 - `GET /api/auth/passkey` + `DELETE /api/auth/passkey/[id]` — manage devices;
   the list deliberately omits `credential_id` and `public_key`.
+
+**Conditional UI.** The login page also starts a *conditional* request on mount
+(`startAuthentication({ optionsJSON, useBrowserAutofill: true })`), so the
+passkey is offered in the password field's autofill popup without pressing
+anything. It is a progressive enhancement and must stay one: it runs only where
+`browserSupportsWebAuthnAutofill()` says yes, the explicit button remains the
+fallback, and a request that ends without a credential is *silent* — being
+superseded is its normal ending, not a failure. The `webauthn` token in
+`autoComplete` is what makes the browser list passkeys there (the library
+refuses to start without such an input) and is added only when conditional UI
+exists, since a browser that does not know the token may discard the whole
+attribute and lose ordinary password autofill. `WebAuthnAbortService` is the
+library singleton that guarantees one live ceremony: the button's call cancels
+the conditional one automatically.
 
 `src/lib/webauthn.ts` derives `rpID`/`origin` from the request (no env var to
 keep in sync across localhost, previews, and production) and holds the

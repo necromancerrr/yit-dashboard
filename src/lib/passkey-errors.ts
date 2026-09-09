@@ -64,6 +64,9 @@ export function passkeyErrorMessage(err: unknown, action: "login" | "register"):
   // Not a WebAuthnError at all — a raw DOMException, if the ceremony threw
   // before the library could classify it.
   const name = err instanceof Error ? err.name : "";
+  // Conditional UI aborts its own background request the moment the user types
+  // a password instead. That is the feature working, not a failure.
+  if (name === "AbortError") return null;
   if (name === "NotAllowedError") return unidentifiedMessage(action);
 
   if (name === "SecurityError") {
