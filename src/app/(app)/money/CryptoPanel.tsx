@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import useSWR from "swr";
-import { Bitcoin, Plus, Trash2, Pencil, ScanLine, AlertTriangle, Lock } from "lucide-react";
+import { Bitcoin, Plus, Trash2, Pencil, ScanLine, AlertTriangle, Lock, WifiOff } from "lucide-react";
 import { fetcher, apiPost, apiPatch } from "@/lib/fetcher";
 import { useUndoableDelete } from "@/lib/useUndoableDelete";
 import { EmptyState } from "@/components/EmptyState";
@@ -40,7 +40,12 @@ const SHARE_ERRORS: Record<string, string> = {
 const emptyForm = { symbol: "", name: "", quantity: "", staked_pct: "", notes: "" };
 
 export function CryptoPanel() {
-  const { data, isLoading, mutate } = useSWR<{
+  // `error` matters more here than anywhere else in the app: this is the one
+  // endpoint the service worker refuses to answer from its cache, because a
+  // portfolio value is only ever true at a live price. Offline, the request
+  // fails on purpose and the panel says so instead of drawing a stale figure —
+  // or, worse, falling through to "$0" and "No holdings yet".
+  const { data, error: loadError, isLoading, mutate } = useSWR<{
     items: CryptoHoldingWithPrice[];
     totalValue: number;
     unpricedCount: number;
@@ -231,9 +236,15 @@ export function CryptoPanel() {
       <div className="card p-4 mb-4">
         <span className="label">Portfolio value</span>
         <div className="text-3xl font-semibold tracking-tight mt-1" style={{ fontVariantNumeric: "tabular-nums" }}>
-          {isLoading ? "–" : usd(total)}
+          {isLoading || loadError ? "–" : usd(total)}
         </div>
-        {(data?.unpricedCount ?? 0) > 0 && (
+        {loadError && (
+          <p className="text-xs mt-1.5 flex items-center gap-1.5" style={{ color: "var(--warning)" }}>
+            <AlertTriangle size={12} />
+            {loadError instanceof Error ? loadError.message : "Prices are unavailable right now."}
+          </p>
+        )}
+        {!loadError && (data?.unpricedCount ?? 0) > 0 && (
           <p className="text-xs mt-1.5 flex items-center gap-1.5" style={{ color: "var(--warning)" }}>
             <AlertTriangle size={12} />
             Excludes {data?.unpricedCount} holding{data?.unpricedCount === 1 ? "" : "s"} with no price available
@@ -247,6 +258,14 @@ export function CryptoPanel() {
           <div className="p-8 text-center text-sm" style={{ color: "var(--ink-muted)" }}>
             Loading…
           </div>
+        ) : loadError ? (
+          // Not EmptyState: "no holdings" and "we can't reach the prices" look
+          // identical on screen and mean opposite things about what you own.
+          <EmptyState
+            icon={WifiOff}
+            title="Holdings unavailable"
+            sub="Your holdings are stored, but they can't be valued without a live price. They'll be back when you reconnect."
+          />
         ) : items.length === 0 ? (
           <EmptyState
             icon={Bitcoin}

@@ -254,7 +254,14 @@ export interface TodayData {
   checklistDoneToday: number;
   checklistTotalToday: number;
   monthNet: number;
-  netWorthSnapshot: number;
+  /**
+   * Null when this response came out of the service worker's offline cache.
+   * The figure is crypto quantity x *live* price, so it is the one field here
+   * that stops being true the moment the network does; the worker blanks it
+   * rather than let a saved copy pass for a current valuation. Anything
+   * rendering it must handle null (show a dash), not fall back to 0.
+   */
+  netWorthSnapshot: number | null;
   /** Null unless an AI provider is configured — the page never depends on it. */
   briefing: string | null;
 }

@@ -11,6 +11,16 @@ const PUBLIC_PATHS = [
   "/api/auth/passkey/login/options",
   "/api/auth/passkey/login/verify",
   "/manifest.webmanifest",
+  // The service worker script itself. It is fetched by the browser's worker
+  // machinery, not by the page, and a redirect to /login there is served as
+  // HTML — which fails registration outright with a MIME type error. It ships
+  // no data of its own; everything it caches still goes through this proxy.
+  "/sw.js",
+  // The offline fallback document, so the worker can precache it during
+  // install and so opening the app with no signal while signed out lands on a
+  // page that explains itself rather than a login form that cannot load. It is
+  // static, client-only, and reads nothing.
+  "/offline",
 ];
 // Next.js's generated icon/manifest routes — browsers and "add to home
 // screen" fetch these before (and regardless of) auth, so they can't be

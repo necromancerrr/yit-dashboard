@@ -16,6 +16,24 @@ const eslintConfig = defineConfig([
     // copy of this repo reports the same findings twice, and its build output.
     ".claude/worktrees/**",
   ]),
+  // The service worker runs in a worker global, not a window one, and is not
+  // bundled — so it needs its own globals declared here rather than an
+  // `/* eslint-env */` comment, which flat config no longer honours.
+  {
+    files: ["public/sw.js"],
+    languageOptions: {
+      globals: {
+        self: "readonly",
+        caches: "readonly",
+        clients: "readonly",
+        fetch: "readonly",
+        Response: "readonly",
+        Request: "readonly",
+        URL: "readonly",
+        console: "readonly",
+      },
+    },
+  },
 ]);
 
 export default eslintConfig;

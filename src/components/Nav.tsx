@@ -43,6 +43,11 @@ export function Nav() {
 
   async function handleLogout() {
     await fetch("/api/auth/logout", { method: "POST" });
+    // Signing out has to take the offline copies with it. The service worker's
+    // caches hold real transactions, deadlines and applications; dropping the
+    // cookie while leaving those on disk would mean the next person to open
+    // the app offline still sees them.
+    navigator.serviceWorker?.controller?.postMessage({ type: "CLEAR_CACHES" });
     router.replace("/login");
     router.refresh();
   }
