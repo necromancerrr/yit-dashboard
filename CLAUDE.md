@@ -52,6 +52,7 @@ src/
   app/
     layout.tsx            # root: metadata from getBrandName(), globals.css
     login/page.tsx        # public sign-in page
+    offline/page.tsx      # public fallback shown when nothing is cached
     icon.tsx apple-icon.tsx icon-192/ icon-512/ manifest.ts   # generated PWA assets
     (app)/                # authenticated group: sidebar + ToastProvider
       layout.tsx
@@ -99,7 +100,9 @@ src/
       gmail.ts            #   Gmail REST client; metadata only, never bodies
     quick-add.ts          # parses a typed line into a school/money proposal
     useUndoableDelete.ts  # optimistic delete with a 5s undo window
+    offline.ts            # offline envelope + connectivity store (pairs with public/sw.js)
   proxy.ts                # auth gate (Next.js 16 renamed middleware.ts → proxy.ts)
+public/sw.js              # service worker — NOT bundled, cannot import from src/
 scripts/hash-password.mjs
 ```
 
@@ -107,8 +110,8 @@ scripts/hash-password.mjs
 
 ### Auth
 `src/proxy.ts` runs on every non-static request. Public paths are `/login`,
-`/api/auth/login`, `/manifest.webmanifest`, and anything under `/icon*` /
-`/apple-icon*` (browsers fetch icons before auth). Everything else requires a
+`/api/auth/login`, `/manifest.webmanifest`, `/sw.js`, `/offline`, and anything
+under `/icon*` / `/apple-icon*` (browsers fetch icons before auth). Everything else requires a
 valid `dash_session` cookie: unauthenticated API requests get a 401 JSON body,
 page requests get redirected to `/login?next=<path>`.
 
@@ -477,6 +480,69 @@ proposed as money. The preview is derived during render — there is no effect
 mirroring the parse into state — and confirming POSTs to the ordinary
 `/api/school` and `/api/finance` routes. No new insert path, and no model call:
 this is deterministic parsing, which is the point.
+## Offline (PWA)
+
+`public/sw.js` is a hand-written service worker — no Workbox, no next-pwa. It
+lives in `public/` so it is served from the origin root and therefore scopes to
+`/` without a `Service-Worker-Allowed` header. Being unbundled, **it cannot
+import from `src/`**: the two strings it shares with the app live in
+`src/lib/offline.ts` and are pinned by `tests/offline.test.ts`.
+
+**One rule governs everything here: a cached response is never handed back as
+though it were live.** The three strategies fall out of it.
+
+- **App shell / hashed assets — cache-first.** `/_next/static/*` and the icon
+  routes are content-hashed or immutable, so a hit cannot be the wrong version.
+- **Navigations — network-first**, then the cached shell for that path, then
+  `/offline`. Never cache-first: the proxy redirects an unauthenticated page
+  request to `/login`, and a cached shell served over that would show a
+  signed-out user a page that cannot load. Caching documents is safe *only*
+  because every page is a client component whose data comes from `/api` — the
+  HTML holds no user data.
+- **API GETs — network-first, and a cache hit is returned only labelled.** The
+  worker injects an `offline: { stale, cachedAt, redacted }` envelope into the
+  JSON body. It is in the body, not a header, so it travels through SWR into
+  the component that renders the numbers instead of being easy to forget.
+
+Two guards protect money and deadlines specifically:
+
+- `/api/crypto` is in `LIVE_PRICE_ROUTES` — never cached, never served stale.
+  Offline it returns 503 and `CryptoPanel` says why. A day-old portfolio value
+  shown as current is worse than nothing, because you act on it.
+- `/api/today` is cacheable but carries `netWorthSnapshot`, a live-priced
+  number. `LIVE_PRICE_FIELDS` nulls it and names it in `redacted`, which is why
+  `TodayData.netWorthSnapshot` is `number | null`. **Adding a price-derived
+  field to a cacheable route means adding it there too.**
+
+`OfflineBanner` (in the `(app)` layout) is the other half of that bargain: it
+names both that you are offline and when the data on screen was saved. Do not
+serve stale data on a screen it does not cover.
+
+**Writes are never queued.** A POST/PATCH/DELETE offline fails at the network,
+`src/lib/fetcher.ts` turns it into "this change was not saved", and the pages
+already render that. A queue would report "saved" for something the server has
+not seen, and these writes are not independent facts — `applyEvent()` orders
+career events against server state and checklist ticks resolve against the
+server's today. Non-GET requests are not intercepted at all, which is also what
+keeps an OS share-target POST working.
+
+**Updates are prompted, not automatic.** `skipWaiting()` on install would swap
+caches under an open page whose hashed chunks then vanish. Instead the new
+worker waits, `ServiceWorkerManager` offers "Reload", and that posts
+`SKIP_WAITING` and reloads on `controllerchange`. `clients.claim()` in activate
+covers only the first install, where there is no old page to break; the client
+re-checks with `registration.update()` on every focus so a phone PWA that never
+closes still upgrades. Bump `VERSION` in `sw.js` to retire every cache it owns.
+
+The worker only registers in production builds — test it with
+`npm run build && npm start`, not `npm run dev`.
+
+Note `experimental.useOffline` (and `useOffline` from `next/offline`) is
+deliberately **not** enabled. That flag makes failed navigations hang pending a
+retry, and a failed router fetch is exactly what triggers the full navigation
+this worker can answer from its shell cache. `src/lib/offline.ts` uses the
+repo's `useSyncExternalStore` pattern instead, fed by both the browser's
+online/offline events and actual fetch failures.
 
 ## Tests
 
@@ -492,3 +558,7 @@ this is deterministic parsing, which is the point.
   file. `DATABASE_URL` is set *before* importing `@/lib/db`, since that module
   resolves it once at load, and `AI_PROVIDER=none` keeps the tests
   deterministic.
+- `tests/offline.test.ts` loads `public/sw.js` in a `node:vm` sandbox and
+  asserts its routing *policy* — what may be served from cache and what may
+  not. The caching mechanics need a real browser and a real network drop; the
+  policy is a pure decision and belongs under test.
