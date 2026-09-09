@@ -1,5 +1,12 @@
 # Inbox autonomy — a design for not pressing yes and no
 
+> **Status: design only — nothing here is implemented.**
+> It is blocked on the owner's answers in the closing section, most of all
+> how often the digest would actually be read. Autonomy with unread
+> oversight is just unaudited automation, so an honest "rarely" changes
+> what should ship.
+
+
 **Status:** design only. Nothing in this document is implemented. No schema, route,
 or pipeline change accompanies it.
 

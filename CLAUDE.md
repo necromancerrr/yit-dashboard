@@ -62,6 +62,7 @@ src/
       money/                # page.tsx + TransactionsPanel + CryptoPanel
       health/ growth/ school/ checklist/
       security/             # manage passkeys (WebAuthn devices)
+      setup/                # what is configured, and what it costs when it is not
     api/
       auth/login  auth/logout
       auth/passkey/         # WebAuthn: login/ + register/ ceremonies, list, delete
@@ -73,6 +74,8 @@ src/
       integrations/route.ts # connection state for external accounts
       summary/route.ts    # aggregate numbers + heatmap (now read by Growth)
       export/route.ts     # every table as one downloadable JSON file
+      setup/route.ts      # configuration report; never returns a secret
+      share/              # (app-level /share) OS share-sheet target
   components/             # Nav, Heatmap, StatCard, Modal, PageHeader, EmptyState, Logo, ToastProvider
   lib/
     db.ts                 # libSQL client (global singleton) + SCHEMA + ensureDb()
@@ -283,6 +286,11 @@ metadata, `Nav`, the login page, and the generated icons. Keep it that way.
 | `APP_TIMEZONE` | no | IANA zone the day rolls over in (streaks, "today", checklist reset). Not `TZ` — reserved on Vercel |
 | `DATABASE_URL` | no | libSQL/Turso URL; defaults to local file |
 | `DATABASE_AUTH_TOKEN` | no | Turso token |
+
+**The Setup page (`/setup`) reports all of this from inside the app** — which
+variable is missing, and what it costs. It never returns a key or any prefix of
+one; `tests/setup-status.test.ts` enforces that. Prefer sending someone there
+over asking them to read this table.
 
 `.env*` is gitignored except `.env.example` — never commit real secrets, and
 update `.env.example` when adding a variable.
@@ -543,6 +551,14 @@ retry, and a failed router fetch is exactly what triggers the full navigation
 this worker can answer from its shell cache. `src/lib/offline.ts` uses the
 repo's `useSyncExternalStore` pattern instead, fed by both the browser's
 online/offline events and actual fetch failures.
+
+## Conventions skill
+
+`.claude/skills/yit-conventions/SKILL.md` collects the non-obvious rules this
+repo enforces — the `setState`-in-an-effect lint, the date helpers, the
+`ensureColumn` vs `SCHEMA` vs `runOnce` split, the vendor-SDK ban, and
+propose-before-create. Every entry exists because it was broken here at least
+once. Load it before writing code rather than rediscovering them.
 
 ## Tests
 
