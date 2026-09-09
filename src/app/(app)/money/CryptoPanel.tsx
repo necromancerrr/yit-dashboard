@@ -1,6 +1,7 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import { Bitcoin, Plus, Trash2, Pencil, ScanLine, AlertTriangle, Lock } from "lucide-react";
 import { fetcher, apiPost, apiPatch } from "@/lib/fetcher";
@@ -26,6 +27,15 @@ const usd = (n: number) =>
 /** Crypto quantities span 8 decimals to millions, so a fixed precision looks wrong at one end. */
 const qty = (n: number) =>
   n.toLocaleString(undefined, { maximumFractionDigits: n < 1 ? 6 : n < 1000 ? 4 : 2 });
+
+/** Failure codes the share target redirects back with. */
+const SHARE_ERRORS: Record<string, string> = {
+  empty: "No image came through from that share.",
+  unsupported: "That file type can't be read — share a PNG, JPEG, or WebP.",
+  toolarge: "That image is larger than 5MB.",
+  failed: "Something went wrong receiving that share.",
+  retry: "You were signed out when that arrived — share it again.",
+};
 
 const emptyForm = { symbol: "", name: "", quantity: "", staked_pct: "", notes: "" };
 
@@ -55,21 +65,10 @@ export function CryptoPanel() {
     onCommitted: () => mutate(),
   });
 
-  async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    e.target.value = ""; // let the same file be picked twice
-    if (!file) return;
-
+  const scanImage = useCallback(async (image: string) => {
     setScanning(true);
     setError(null);
     try {
-      const image = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = () => reject(new Error("Could not read that file"));
-        reader.readAsDataURL(file);
-      });
-
       const res = await apiPost<{ proposals: Proposal[]; notes: string | null }>(
         "/api/import/screenshot",
         { image, kind: "crypto" }
@@ -81,7 +80,50 @@ export function CryptoPanel() {
     } finally {
       setScanning(false);
     }
+  }, []);
+
+  async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // let the same file be picked twice
+    if (!file) return;
+    try {
+      const image = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () => reject(new Error("Could not read that file"));
+        reader.readAsDataURL(file);
+      });
+      await scanImage(image);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not read that file");
+    }
   }
+
+  // A screenshot shared from another app arrives as ?shared=<id>. Collect it
+  // once and run the ordinary review flow: sharing must not be a shortcut past
+  // the confirm step.
+  const sharedId = useSearchParams().get("shared");
+  const collected = useRef<string | null>(null);
+
+  // Derived from the URL, not state — the share sheet reports its failure in
+  // the redirect, so there is nothing to synchronise.
+  const shareError = sharedId ? SHARE_ERRORS[sharedId] ?? null : null;
+
+  useEffect(() => {
+    if (!sharedId || shareError || collected.current === sharedId) return;
+    collected.current = sharedId;
+
+    (async () => {
+      try {
+        const res = await fetch(`/api/share/${sharedId}`);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error ?? "That shared image is no longer available.");
+        await scanImage(data.image);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Could not read that shared image");
+      }
+    })();
+  }, [sharedId, shareError, scanImage]);
 
   async function confirmImport() {
     if (!proposals) return;
@@ -179,9 +221,9 @@ export function CryptoPanel() {
         aria-label="Choose a screenshot to import"
       />
 
-      {error && (
+      {(error ?? shareError) && (
         <div className="card p-4 mb-4 text-sm" style={{ color: "var(--critical)" }}>
-          {error}
+          {error ?? shareError}
         </div>
       )}
 

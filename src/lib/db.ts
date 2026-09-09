@@ -135,6 +135,18 @@ CREATE INDEX IF NOT EXISTS idx_checklist_completions_date ON checklist_completio
 -- coin_id is the price provider's identifier (e.g. "ethereum"). It is resolved
 -- from the symbol on first use and cached here, because symbols are ambiguous
 -- across chains and an id is not.
+-- A screenshot handed over by the OS share sheet, held only long enough for
+-- the page to pick it up. A share target is a POST from outside the app, so
+-- there is no way to pass the bytes to a client component except through
+-- somewhere both sides can see. Rows are deleted on read, and any stragglers
+-- are swept on the next share.
+CREATE TABLE IF NOT EXISTS shared_images (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  media_type TEXT NOT NULL,
+  data TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS crypto_holdings (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   symbol TEXT NOT NULL,
