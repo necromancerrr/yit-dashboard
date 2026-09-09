@@ -12,6 +12,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Scratch checkouts made when running background agents — linting another
+    // copy of this repo reports the same findings twice, and its build output.
+    ".claude/worktrees/**",
   ]),
 ]);
 
