@@ -201,6 +201,126 @@ describe("monthNet counts this month, and only this month", () => {
   });
 });
 
+describe("overdue work says it is overdue", () => {
+  /**
+   * `relativeDay` collapsed everything in the past into "today", so an
+   * assignment three weeks late rendered as "Assignment 4 due today" on the
+   * home screen. That is the one fact you most need, stated backwards — and you
+   * keep deprioritising the thing precisely because the app says it is fine.
+   */
+  async function task(title: string, dueOffsetDays: number, course = "CSE 143") {
+    const { shiftISODate } = await import("@/lib/date");
+    await db.execute({
+      sql: "INSERT INTO school_tasks (course, title, due_date, status) VALUES (?,?,?,?)",
+      args: [course, title, shiftISODate(todayISO(), dueOffsetDays), "Pending"],
+    });
+  }
+
+  test("a missed deadline is never called 'today'", async () => {
+    await task("Assignment 4", -21);
+    const data = await fetchToday();
+    const row = data.items.find((i) => i.kind === "school");
+    assert.match(row!.title, /21 days ago/);
+    assert.doesNotMatch(row!.title, /due today/);
+  });
+
+  test("yesterday and today read as themselves", async () => {
+    await task("Late one", -1);
+    await task("Due now", 0);
+    const titles = (await fetchToday()).items.map((i) => i.title);
+    assert.ok(titles.some((t) => /was due yesterday/.test(t)), titles.join(" | "));
+    assert.ok(titles.some((t) => /due today/.test(t)), titles.join(" | "));
+  });
+
+  test("old overdue work cannot bury this week's deadlines", async () => {
+    // The bug: `ORDER BY due_date ASC LIMIT 10` handed the whole list to the
+    // ten *oldest* things never marked done, so tomorrow's exam never appeared.
+    for (let i = 1; i <= 15; i++) await task(`Abandoned ${i}`, -100 - i);
+    await task("Exam tomorrow", 1);
+
+    const data = await fetchToday();
+    const titles = data.items.map((i) => i.title);
+    assert.ok(
+      titles.some((t) => t.includes("Exam tomorrow")),
+      `upcoming work was crowded out: ${titles.join(" | ")}`
+    );
+  });
+
+  test("only the most recently missed are listed; the rest are counted", async () => {
+    for (let i = 1; i <= 8; i++) await task(`Missed ${i}`, -i);
+
+    const data = await fetchToday();
+    const overdue = data.items.filter((i) => /was due/.test(i.title));
+    assert.equal(overdue.length, 3);
+    // Two different questions, answered differently on purpose. *Which* three
+    // are listed: the most recently missed, because Friday is still actionable
+    // and last term is a decision about whether it matters at all. What order
+    // they appear in: most overdue first, because among things you missed this
+    // week the one you missed earliest is the most urgent.
+    assert.deepEqual(
+      overdue.map((i) => i.title.split(" was due")[0]),
+      ["Missed 3", "Missed 2", "Missed 1"]
+    );
+
+    const rollup = data.items.find((i) => i.id === "overdue-rollup");
+    assert.equal(rollup?.title, "5 more things already overdue");
+  });
+
+  test("no rollup when nothing is hidden", async () => {
+    await task("Missed 1", -1);
+    await task("Missed 2", -2);
+    const data = await fetchToday();
+    assert.equal(data.items.find((i) => i.id === "overdue-rollup"), undefined);
+  });
+
+  test("overdue career actions count toward the same rollup", async () => {
+    const { shiftISODate } = await import("@/lib/date");
+    for (let i = 1; i <= 5; i++) {
+      await db.execute({
+        sql: `INSERT INTO applications (company, role, status, next_action_date, next_action_label)
+              VALUES (?, ?, 'Applied', ?, 'OA due')`,
+        args: [`Co ${i}`, "SWE", shiftISODate(todayISO(), -i)],
+      });
+    }
+    const data = await fetchToday();
+    const rollup = data.items.find((i) => i.id === "overdue-rollup");
+    assert.equal(rollup?.title, "2 more things already overdue");
+  });
+
+  test("a finished task is never overdue", async () => {
+    const { shiftISODate } = await import("@/lib/date");
+    await db.execute({
+      sql: "INSERT INTO school_tasks (course, title, due_date, status) VALUES (?,?,?,?)",
+      args: ["CSE 143", "Handed in", shiftISODate(todayISO(), -30), "Done"],
+    });
+    assert.deepEqual((await fetchToday()).items, []);
+  });
+
+  test("a rejected application stops chasing you", async () => {
+    const { shiftISODate } = await import("@/lib/date");
+    await db.execute({
+      sql: `INSERT INTO applications (company, role, status, next_action_date, next_action_label)
+            VALUES (?, ?, 'Rejected', ?, 'OA due')`,
+      args: ["Gone Inc", "SWE", shiftISODate(todayISO(), -3)],
+    });
+    assert.deepEqual((await fetchToday()).items, []);
+  });
+
+  test("overdue outranks everything, and the rollup sits just behind it", async () => {
+    for (let i = 1; i <= 5; i++) await task(`Missed ${i}`, -i);
+    await task("Due today", 0);
+    await addHabit("Read 20 pages");
+
+    const data = await fetchToday();
+    const kinds = data.items.map((i) => i.id);
+    // Three listed overdue, then the rollup, then today's work.
+    assert.equal(kinds.indexOf("overdue-rollup"), 3);
+    assert.ok(
+      kinds.indexOf("overdue-rollup") < kinds.findIndex((k) => k.startsWith("habit-"))
+    );
+  });
+});
+
 describe("Today's ranking", () => {
   test("something due today outranks a habit, which outranks tomorrow", async () => {
     await addHabit("Read 20 pages");

@@ -127,14 +127,20 @@ function HabitCheck({ item, onDone }: { item: TodayItem; onDone: () => void }) {
 function PriorityRow({
   item,
   index,
+  today,
   onHabitDone,
 }: {
   item: TodayItem;
   index: number;
+  today: string | undefined;
   onHabitDone: () => void;
 }) {
   const Icon = KIND_ICON[item.kind];
-  const color = KIND_COLOR[item.kind];
+  // Overdue is derived from the two dates already on screen rather than a new
+  // field — the route's day and the row's due date. A row that is late should
+  // not need the server to remember to say so.
+  const overdue = !!today && !!item.dueDate && item.dueDate < today;
+  const color = overdue ? "var(--critical)" : KIND_COLOR[item.kind];
   // The id, not the kind: a row without one can never be given a checkbox by
   // accident.
   const tickable = item.checklistItemId !== undefined;
@@ -247,7 +253,13 @@ export default function TodayPage() {
         ) : (
           <ul className="divide-y" style={{ borderColor: "var(--border)" }}>
             {items.map((item, i) => (
-              <PriorityRow key={item.id} item={item} index={i} onHabitDone={() => mutate()} />
+              <PriorityRow
+                key={item.id}
+                item={item}
+                index={i}
+                today={data?.date}
+                onHabitDone={() => mutate()}
+              />
             ))}
           </ul>
         )}

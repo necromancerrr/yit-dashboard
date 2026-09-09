@@ -18,6 +18,18 @@ const STALE_AFTER_DAYS = 14;
 /** How far ahead a dated commitment starts competing for attention. */
 const DEADLINE_HORIZON_DAYS = 7;
 
+/**
+ * How long a missed deadline keeps asking for attention.
+ *
+ * The window used to start at today, so a deadline dropped out of the Inbox the
+ * morning after it was missed — the exact moment it most needed saying. But it
+ * cannot stay forever either: something three months past is no longer a
+ * deadline, it is a decision about whether it still matters, and an Inbox that
+ * nags about it indefinitely is one you stop reading. Two weeks is long enough
+ * to be a reminder and short enough not to become wallpaper.
+ */
+const OVERDUE_GRACE_DAYS = 14;
+
 interface DerivedItem {
   kind: string;
   title: string;
@@ -60,14 +72,14 @@ export async function refreshDerivedInbox(today: string = todayISO()): Promise<v
               AND next_action_date >= ?
               AND next_action_date <= ?
               AND status NOT IN ('Rejected', 'Withdrawn')`,
-      args: [today, horizon],
+      args: [shiftISODate(today, -OVERDUE_GRACE_DAYS), horizon],
     }),
     db.execute({
       sql: `SELECT id, course, title, due_date
             FROM school_tasks
             WHERE status != 'Done' AND due_date IS NOT NULL
               AND due_date >= ? AND due_date <= ?`,
-      args: [today, horizon],
+      args: [shiftISODate(today, -OVERDUE_GRACE_DAYS), horizon],
     }),
   ]);
 
@@ -94,7 +106,7 @@ export async function refreshDerivedInbox(today: string = todayISO()): Promise<v
     const days = daysBetween(today, due);
     derived.push({
       kind: "career_deadline",
-      title: `${row.company as string} ${(row.next_action_label as string | null) ?? "deadline"} ${relativeDay(days)}`,
+      title: `${row.company as string} ${(row.next_action_label as string | null) ?? "deadline"} ${days < 0 ? "was " : ""}${relativeDay(days)}`,
       detail: row.role ? (row.role as string) : null,
       severity: days <= 2 ? "urgent" : "attention",
       applicationId: Number(row.id),
@@ -107,7 +119,7 @@ export async function refreshDerivedInbox(today: string = todayISO()): Promise<v
     const days = daysBetween(today, due);
     derived.push({
       kind: "school_deadline",
-      title: `${row.title as string} due ${relativeDay(days)}`,
+      title: `${row.title as string} ${days < 0 ? "was due" : "due"} ${relativeDay(days)}`,
       detail: row.course as string,
       severity: days <= 1 ? "urgent" : "attention",
       applicationId: null,
@@ -156,10 +168,21 @@ function daysBetween(from: string, to: string): number {
   return Math.round((b - a) / 86_400_000);
 }
 
-function relativeDay(days: number): string {
-  if (days <= 0) return "today";
+/**
+ * How a due date reads next to today.
+ *
+ * This used to collapse everything in the past into "today", so an assignment
+ * three weeks overdue rendered as "Assignment 4 due today" on the home screen.
+ * That is worse than saying nothing: it is the one fact you most need, stated
+ * backwards, and you keep deprioritising the thing precisely because the app
+ * says it is still fine.
+ */
+export function relativeDay(days: number): string {
+  if (days === 0) return "today";
   if (days === 1) return "tomorrow";
+  if (days === -1) return "yesterday";
+  if (days < 0) return `${-days} days ago`;
   return `in ${days} days`;
 }
 
-export { STALE_AFTER_DAYS, DEADLINE_HORIZON_DAYS, daysBetween, relativeDay, isTerminal };
+export { STALE_AFTER_DAYS, DEADLINE_HORIZON_DAYS, OVERDUE_GRACE_DAYS, daysBetween, isTerminal };
