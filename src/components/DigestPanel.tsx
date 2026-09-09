@@ -61,6 +61,14 @@ function Row({ action, onChange }: { action: DigestAction; onChange: () => void 
         <p className="text-xs mt-0.5" style={{ color: "var(--ink-muted)" }}>
           {outcome ?? action.because}
         </p>
+        {action.edited && !outcome && (
+          // Saying this out loud matters: the correction has already been
+          // counted against the sender, and you should be able to see that
+          // rather than wonder why it stopped acting on its own.
+          <p className="text-xs mt-0.5" style={{ color: "var(--warning)" }}>
+            You changed this — counted as a correction
+          </p>
+        )}
       </div>
       <div className="flex items-center gap-2 shrink-0">
         <span

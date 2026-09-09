@@ -1,6 +1,8 @@
 import { db } from "@/lib/db";
 import { getAIProvider, getVisionProvider } from "@/lib/ai";
 import { todayISO } from "@/lib/date";
+import { parseMode, TRUST_PROMOTION } from "@/lib/autonomy/policy";
+import { trustSummary } from "@/lib/autonomy/trust";
 
 /**
  * What the app can see about its own configuration.
@@ -185,12 +187,70 @@ async function passkeyCheck(): Promise<SetupCheck> {
   };
 }
 
+/**
+ * What the mail sync is allowed to do, and whether anything can act yet.
+ *
+ * This check exists for one specific failure: turning `AUTOMATION_MODE=auto` on
+ * and seeing nothing happen. A fresh ledger means nothing auto-applies until
+ * senders have been confirmed a few times — which is correct behaviour and
+ * indistinguishable from a broken switch unless the app says so out loud.
+ */
+async function automationCheck(): Promise<SetupCheck> {
+  const mode = parseMode(process.env.AUTOMATION_MODE);
+
+  if (mode === "off") {
+    return {
+      id: "automation",
+      title: "Acting on email",
+      level: "off",
+      status: "Off. Everything from your mailbox becomes a question in the Inbox.",
+      fix: "Set AUTOMATION_MODE=assist (the default) or =auto to let some of it through.",
+    };
+  }
+
+  if (mode === "assist") {
+    return {
+      id: "automation",
+      title: "Acting on email",
+      level: "ok",
+      status: "Career status changes apply on their own. Money and school always ask.",
+      fix: null,
+    };
+  }
+
+  const { trusted, learning, off } = await trustSummary();
+  if (trusted === 0) {
+    return {
+      id: "automation",
+      title: "Acting on email",
+      level: "warn",
+      status:
+        learning > 0
+          ? `On, but still learning — ${learning} sender${learning === 1 ? "" : "s"} short of the bar.`
+          : "On, but no sender has earned anything yet, so nothing will be filed for you.",
+      // Named as the next action rather than as a fault: nothing is broken.
+      fix: `A sender acts on its own after you confirm ${TRUST_PROMOTION} of its proposals in the Inbox. Until then everything is still a question — that is the switch working, not failing.`,
+    };
+  }
+
+  return {
+    id: "automation",
+    title: "Acting on email",
+    level: "ok",
+    status: `On. ${trusted} sender${trusted === 1 ? "" : "s"} can file without asking${
+      learning > 0 ? `, ${learning} still learning` : ""
+    }${off > 0 ? `, ${off} turned off` : ""}.`,
+    fix: null,
+  };
+}
+
 export async function getSetupStatus(): Promise<SetupStatus> {
   const checks: SetupCheck[] = [
     databaseCheck(),
     passwordCheck(),
     await passkeyCheck(),
     timezoneCheck(),
+    await automationCheck(),
     textAICheck(),
     visionCheck(),
   ];

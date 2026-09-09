@@ -34,6 +34,7 @@ export async function GET() {
         inbox,
         integrations,
         automation,
+        rules,
       ] = await Promise.all([
         db.execute("SELECT * FROM gym_logs ORDER BY date"),
         db.execute("SELECT * FROM leetcode_logs ORDER BY date"),
@@ -55,6 +56,10 @@ export async function GET() {
         // The audit trail for everything the sync did on its own. An autonomy
         // feature whose record is missing from the backup is not auditable.
         db.execute("SELECT * FROM automation_actions ORDER BY id"),
+        // What each sender has earned. Restoring a backup without this would
+        // silently reset every promotion — the automation would look identical
+        // and quietly stop acting.
+        db.execute("SELECT * FROM automation_rules ORDER BY id"),
       ]);
 
       const payload = {
@@ -73,6 +78,7 @@ export async function GET() {
         inbox_items: inbox.rows,
         integrations: integrations.rows,
         automation_actions: automation.rows,
+        automation_rules: rules.rows,
       };
 
       return new NextResponse(JSON.stringify(payload, null, 2), {

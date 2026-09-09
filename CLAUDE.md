@@ -99,9 +99,11 @@ src/
     search-types.ts       # client-safe search shapes + section labels
     palette.ts            # command-palette destinations + matcher (pure)
     autonomy/             # how much the sync may do on its own
-      policy.ts           #   decideTier() — pure, no DB, no clock
+      policy.ts           #   decideTier() + trust math — pure, no DB, no clock
+      trust.ts            #   the ledger: read/promote/demote automation_rules
       journal.ts          #   the only writer of automation_actions; undo
       digest-types.ts     #   client-safe shapes (journal imports node:fs)
+      rule-types.ts       #   client-safe rule shapes (trust.ts imports db)
     recurring.ts          # subscription detection from finance rows (pure)
     money-period.ts       # period windows + period-over-period totals (pure)
     setup-status.ts       # configuration checks; never returns a secret
@@ -177,7 +179,7 @@ dev hot-reloads don't open new connections. The whole schema lives in the
 EXISTS` statements, split on `;` and executed once by `ensureDb()` (memoized on
 `globalThis.__dashboardDbReady`).
 
-Seventeen tables. The originals — `gym_logs`, `leetcode_logs`, `interviews`,
+Eighteen tables. The originals — `gym_logs`, `leetcode_logs`, `interviews`,
 `school_tasks`, `finance_transactions`, `checklist_items`,
 `checklist_completions`, `passkeys` — plus `shared_images`, `crypto_holdings`
 and the Yit OS set: `applications`, `application_events`, `inbox_items`, `external_events`,
@@ -305,7 +307,7 @@ metadata, `Nav`, the login page, and the generated icons. Keep it that way.
 | `AI_PROVIDER` | no | text AI provider: defaults to `deepseek`; use `none` to disable or `anthropic` for the legacy provider |
 | `AI_MODEL` | no | text AI model override; DeepSeek defaults to `deepseek-v4-flash` |
 | `DEEPSEEK_VISION_MODEL` | no | opt-in vision model for DeepSeek; without it screenshot import is off for that provider |
-| `AUTOMATION_MODE` | no | `off` \| `assist` (default — today's behaviour) \| `auto`. Anything unrecognised means `assist` |
+| `AUTOMATION_MODE` | no | `off` \| `assist` (default — today's behaviour) \| `auto`. Anything unrecognised means `assist`. Under `auto`, senders still have to earn it — see **Trust** |
 | `APP_TIMEZONE` | no | IANA zone the day rolls over in (streaks, "today", checklist reset). Not `TZ` — reserved on Vercel |
 | `DATABASE_URL` | no | libSQL/Turso URL; defaults to local file |
 | `DATABASE_AUTH_TOKEN` | no | Turso token |
@@ -463,11 +465,11 @@ Rules worth keeping when extending this:
   bounds the blast radius of a backfill, a cursor rewind, or a classifier
   regression: past it, everything becomes questions. Nothing is lost — a long
   inbox is a recoverable afternoon, a hundred silent ledger rows is not.
-- **Silence is never consent.** `reviewed_at` is set only by an explicit "looks
-  right" or an undo. A row nobody looked at is not evidence of anything, so a
-  system being ignored must become *less* autonomous, not more. This is why the
-  trust ledger (Stage 3, `docs/inbox-autonomy.md`) is deliberately not built
-  yet.
+- **Silence is never consent.** `reviewed_at` and `confirms` move only on an
+  explicit act — confirming a proposal, acknowledging a digest, or undoing. A
+  row nobody looked at is not evidence of anything, so a system being ignored
+  becomes *less* autonomous over time rather than more. That is the opposite of
+  the usual drift, and it is the single most important rule here.
 - **Every automated row carries its provenance.** `source` and
   `external_event_id` on `school_tasks` and `finance_transactions`, rendered as
   a small `<FromEmail>` marker. A machine write that looks identical to yours is
@@ -478,6 +480,59 @@ Rules worth keeping when extending this:
   rank (`/api/today` still sorts by real dates in SQL). A ranking cannot be
   reversed, only re-rolled, and everything here leans on decisions that can be
   shown and undone.
+
+### Trust: a sender earns autonomy by being right, not by looking right
+
+`automation_rules` (the ledger) plus the pure math in `policy.ts`
+(`assessTrust`, `effectiveConfirms`, `requiredConfirms`). **Money and school
+auto-apply are gated on it** — a billing-shaped address is a *structural*
+signal saying the mail looks like a receipt, and nothing at all about whether
+this particular sender has ever been read correctly. The ledger is a gate, not
+a bonus.
+
+Consequence worth stating plainly: on a fresh database `AUTOMATION_MODE=auto`
+writes **nothing** until senders have been confirmed. That is correct and is
+indistinguishable from a broken switch, so `/setup` says so out loud
+(`automationCheck()`), and `runOnce("2026-09-autonomy-seed-trust-…")` seeds the
+ledger from inbox items you already confirmed — reading history rather than
+inventing evidence, capped at `TRUST_PROMOTION`.
+
+- **Keyed on the envelope sender domain, never the display name.** Display
+  names are attacker-controlled; `merchantFrom()` prefers `senderName` for the
+  *category*, which is fine for a label and unacceptable as an authorization
+  key. `scopeKeyFor()` wraps `senderDomain()`, and the seed uses the same
+  function rather than a copy — two different notions of "the domain" would
+  credit senders the lookup never finds.
+- **Three clean confirmations promote.** One correction resets `confirms` to
+  zero *and* raises the bar by one (`requiredConfirms`), so recovery is
+  possible but costs more each time and a sender whose mail is structurally
+  hard to read drifts out of autonomy on its own. A permanent ban is
+  `mode: "never"` — a decision you make, not one a counter makes for you.
+- **Corrections come from undo *and* from edits.** `reconcileEdits()` runs at
+  the top of `getDigest()` (on read, no cron — the repo's convention) and
+  compares the row against its fingerprint. An edit is the most informative
+  correction there is: the machine got it *nearly* right, which no confidence
+  threshold can see, and waiting for an undo would miss it entirely because
+  fixing a row is the natural thing to do. `edited_at` makes it count once.
+- **Deleting a row by hand is not a correction.** You removing something you
+  did not want is already expressed by it being gone; counting it would demote
+  on an act that says nothing about how the message was read. Dismissing a
+  proposal is neutral for the same reason — "not now" is the usual meaning.
+- **Standing lapses on read.** No confirmation and no unattended write for
+  `TRUST_IDLE_DAYS` (90), then one confirmation lapses per
+  `TRUST_DECAY_EVERY_DAYS` (30). A merchant you stopped using should not stay
+  trusted forever, and a promotion earned under one email template should not
+  outlive the template.
+- **"Looks right" credits a sender once per batch**, not once per row.
+  Agreeing with a batch is one judgement, not twelve.
+
+`<TrustRules>` on the Inbox page is the surface for all of this, and its point
+is that autonomy stays *falsifiable*: you can see which senders have earned
+something, how much, and what each is short of. A system that acts on its own
+and cannot be interrogated is one you end up switching off wholesale, which is
+the outcome the whole feature exists to avoid. Per-sender rather than global,
+because "stop doing this with Amazon" and "stop doing this at all" are
+different decisions.
 
 ### AI is additive and never required
 

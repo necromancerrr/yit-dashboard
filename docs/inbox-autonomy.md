@@ -1,6 +1,6 @@
 # Inbox autonomy — a design for not pressing yes and no
 
-> **Status: Stages 0, 1, 2 and 4 are implemented. Stage 3 is not.**
+> **Status: Stages 0-4 are implemented.**
 >
 > Shipped: `automation_actions` and the journal, `GET/POST /api/digest`,
 > `POST /api/digest/[id]/undo` with the fingerprint check, the Today line and
@@ -9,10 +9,23 @@
 > auto-apply, the run budget and the duplicate-charge check — all behind
 > `AUTOMATION_MODE`, which defaults to `assist` (exactly today's behaviour).
 >
-> **Not shipped: the trust ledger (Stage 3).** `automation_rules`, promotion
-> at three confirms, decay on read and the per-sender `never` toggle are
-> designed below and not built. Until they exist, autonomy is a fixed policy
-> rather than one that grows, which is the safer half.
+> Stage 3 shipped too: `automation_rules`, promotion at three confirms,
+> demotion on any correction, lapse computed on read, the `runOnce()` seed and
+> the per-sender ask/always/never panel.
+>
+> **Two deliberate departures from this document**, both stricter than it:
+>
+> 1. §2 has money T1 requiring trust and leaves school's row silent on it.
+>    School is gated on trust too — a wrong deadline is the *more* expensive
+>    error, so it should not have the weaker gate. One rule, no per-domain
+>    exception.
+> 2. §2 says "trust = confirms when corrections === 0, else 0", which reads as
+>    a permanent ban after a single mistake. Implemented instead as: a
+>    correction resets confirms to zero *and* raises the bar by one. An
+>    automatic permanent ban would accumulate silently until nothing was ever
+>    automatic — indistinguishable from the feature being broken — while a
+>    rising bar still lets a structurally bad sender drift out on its own. A
+>    permanent ban is `mode: "never"`, which is a decision you make.
 >
 > The open questions in §9 are still open. The constants they would change
 > (`AUTO_APPLY_MAX_AMOUNT = 100`, `AUTO_APPLY_MAX_PER_RUN = 10`) are named in

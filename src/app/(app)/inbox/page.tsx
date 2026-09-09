@@ -8,6 +8,7 @@ import { fetcher, apiPatch, apiPost } from "@/lib/fetcher";
 import { PageHeader } from "@/components/PageHeader";
 import { EmptyState } from "@/components/EmptyState";
 import { DigestPanel } from "@/components/DigestPanel";
+import { TrustRules } from "@/components/TrustRules";
 import type { InboxItem } from "@/lib/types";
 
 interface InboxRow extends InboxItem {
@@ -97,6 +98,9 @@ export default function InboxPage() {
           deliberate: seeing the work done first is what makes the remaining
           questions feel like a short list rather than a backlog. */}
       <DigestPanel />
+      {/* Collapsed by default. It answers "why did it do that?" and "make it
+          stop", which are questions you have occasionally, not every visit. */}
+      <TrustRules />
 
       {isLoading ? (
         <div className="card p-8 text-center text-sm" style={{ color: "var(--ink-muted)" }}>

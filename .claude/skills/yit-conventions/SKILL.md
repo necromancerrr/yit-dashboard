@@ -109,6 +109,30 @@ cannot tell if spending is up without knowing up since when.
 rather than "+100%" for a first month; a made-up number wearing the clothes of
 a measurement is worse than a blank.
 
+## Autonomy
+
+**A capability is gated on evidence, not on shape.** `decideMoneyTier` requires
+both a receipt-shaped sender *and* a trust record: looking like a receipt says
+nothing about whether this sender has ever been read correctly. When adding a
+new automatic action, ask what would make it *earn* the right — a structural
+signal alone is never enough.
+
+**Silence is never consent.** `confirms` and `reviewed_at` move only on an
+explicit act. Never increment trust from "nobody complained" — a system being
+ignored must become less autonomous, not more.
+
+**A client component may not import a module that touches the database.**
+`journal.ts` and `trust.ts` pull `node:fs` in through libSQL, so their shapes
+live in `digest-types.ts` and `rule-types.ts`. The build fails outright, not at
+runtime. Same pattern as `search-types.ts`.
+
+**Duplicating a constant or a helper across modules is drift.** `db.ts`'s trust
+seed imports `senderDomain()` and `TRUST_PROMOTION` rather than copying them:
+two notions of "the sender domain" would credit senders the lookup never finds.
+Check for an import path before writing a second copy — the pure modules
+(`policy.ts`, `normalize.ts`, `career-status.ts`) reach nothing that imports
+`db`, so importing them anywhere is safe.
+
 ## Two hand-maintained lists need a test between them
 
 When the same fact lives in two files, add a test that reads both and fails on
