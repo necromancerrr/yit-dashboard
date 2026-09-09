@@ -180,3 +180,35 @@ describe("classifyDomain — deferral", () => {
     assert.equal(signal, null);
   });
 });
+
+describe("extractDate — direction", () => {
+  test("a deadline rolls a long-past month forward", () => {
+    // "January 5" seen in December means the coming January.
+    assert.equal(extractDate("Due January 5", "2026-12-20", "future"), "2027-01-05");
+  });
+
+  test("a receipt never rolls forward into the future", () => {
+    // The bug this fixes: a September receipt reading "March 14" was filed
+    // under 2027, vanishing from every month you would look for it in.
+    assert.equal(extractDate("Charged $40 on March 14", "2026-09-09", "past"), "2026-03-14");
+  });
+
+  test("a receipt dated after today is last year's, not a prediction", () => {
+    // "December 28" read on January 3 is a year-boundary artefact.
+    assert.equal(extractDate("Charged $12 on December 28", "2027-01-03", "past"), "2026-12-28");
+  });
+
+  test("an explicit year always wins over the direction", () => {
+    assert.equal(extractDate("Charged March 14, 2027", "2026-09-09", "past"), "2027-03-14");
+    assert.equal(extractDate("Due March 14, 2025", "2026-09-09", "future"), "2025-03-14");
+  });
+
+  test("slash dates honour the direction too", () => {
+    assert.equal(extractDate("paid 3/14", "2026-09-09", "past"), "2026-03-14");
+    assert.equal(extractDate("due 1/5", "2026-12-20", "future"), "2027-01-05");
+  });
+
+  test("defaults to future, so existing callers are unchanged", () => {
+    assert.equal(extractDate("Due January 5", "2026-12-20"), "2027-01-05");
+  });
+});
