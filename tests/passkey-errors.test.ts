@@ -40,6 +40,14 @@ describe("passkeyErrorMessage", () => {
     assert.notEqual(login, register);
   });
 
+  test("stays silent for a bare AbortError, which conditional UI causes routinely", () => {
+    // The autofill request is aborted whenever the user types a password
+    // instead. Surfacing that as an error would make the feature look broken.
+    const abort = new Error("aborted");
+    abort.name = "AbortError";
+    assert.equal(passkeyErrorMessage(abort, "login"), null);
+  });
+
   test("handles a raw DOMException that never reached the library", () => {
     const raw = new Error("nope");
     raw.name = "NotAllowedError";
