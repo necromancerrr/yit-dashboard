@@ -244,6 +244,14 @@ export interface TodayItem {
   urgency: number;
   dueDate: string | null;
   href: string;
+  /**
+   * Set only on `habit` rows: the `checklist_items.id` this row can tick.
+   *
+   * Its presence is what tells the UI a row is actionable in place rather than
+   * a link somewhere else — so nothing has to re-derive "is this a habit?" from
+   * the kind, and a row without it can never be given a checkbox by accident.
+   */
+  checklistItemId?: number;
 }
 
 export interface TodayData {

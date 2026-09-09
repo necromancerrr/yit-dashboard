@@ -24,6 +24,23 @@ import type { TodayItem } from "@/lib/types";
 /** Only this far ahead competes for today's attention. */
 const HORIZON_DAYS = 7;
 
+/**
+ * How many habits are listed individually before they collapse into a count.
+ *
+ * A habit is the one thing on this page you can finish *from* this page, so
+ * listing them individually is what makes the list actionable rather than
+ * merely informative. Listing twelve of them would bury the deadlines that
+ * cannot be dealt with in one tap, which is the opposite of the point.
+ */
+const HABITS_LISTED = 3;
+
+/**
+ * Habits rank above tomorrow's deadlines because they are today's work, which
+ * means they can crowd the list. Three of them plus a "+N more" row is four
+ * slots out of ten — enough that a week of deadlines still fits underneath.
+ */
+const MAX_ITEMS = 10;
+
 /** Urgency is "days until due", nudged so same-day items outrank equal ties. */
 function urgencyFor(days: number, weight: number): number {
   return days * 10 + weight;
@@ -54,12 +71,9 @@ export async function GET(req: NextRequest) {
                   ORDER BY next_action_date ASC LIMIT 10`,
             args: [horizon],
           }),
-          db.execute({
-            sql: `SELECT COUNT(*) AS total,
-                         SUM(CASE WHEN done = 1 AND done_date = ? THEN 1 ELSE 0 END) AS done
-                  FROM checklist_items WHERE recurring = 1`,
-            args: [today],
-          }),
+          // The rows themselves rather than a count: each unfinished habit is
+          // listed and ticked in place, and the totals are derived from these.
+          db.execute("SELECT id, title, category, done, done_date FROM checklist_items WHERE recurring = 1 ORDER BY id"),
           db.execute("SELECT COUNT(*) AS c FROM inbox_items WHERE state = 'open'"),
           db.execute({
             sql: "SELECT DISTINCT date FROM gym_logs WHERE date >= ?",
@@ -109,16 +123,42 @@ export async function GET(req: NextRequest) {
         });
       }
 
-      const checklistDone = Number(checklist.rows[0]?.done ?? 0);
-      const checklistTotal = Number(checklist.rows[0]?.total ?? 0);
-      if (checklistTotal > checklistDone) {
+      // rolloverRecurringChecklist() above has already cleared `done` on
+      // anything last completed before today, so `done` here means done today.
+      const habits = checklist.rows.map((r) => ({
+        id: Number(r.id),
+        title: String(r.title),
+        category: (r.category as string | null) ?? null,
+        done: Number(r.done) === 1 && r.done_date === today,
+      }));
+      const checklistTotal = habits.length;
+      const checklistDone = habits.filter((h) => h.done).length;
+      const remaining = habits.filter((h) => !h.done);
+
+      remaining.slice(0, HABITS_LISTED).forEach((habit, i) => {
+        items.push({
+          id: `habit-${habit.id}`,
+          kind: "habit",
+          title: habit.title,
+          detail: habit.category,
+          // Habits are today's work but never outrank a dated deadline. The
+          // index keeps their order stable instead of leaving equal urgencies
+          // to the sort's mercy.
+          urgency: urgencyFor(0, 5 + i),
+          dueDate: today,
+          href: "/checklist",
+          checklistItemId: habit.id,
+        });
+      });
+
+      if (remaining.length > HABITS_LISTED) {
+        const rest = remaining.length - HABITS_LISTED;
         items.push({
           id: "checklist",
           kind: "checklist",
-          title: `${checklistTotal - checklistDone} habit${checklistTotal - checklistDone === 1 ? "" : "s"} left today`,
+          title: `${rest} more habit${rest === 1 ? "" : "s"} left today`,
           detail: `${checklistDone} of ${checklistTotal} done`,
-          // Habits are today's work but never outrank a dated deadline.
-          urgency: urgencyFor(0, 5),
+          urgency: urgencyFor(0, 5 + HABITS_LISTED),
           dueDate: today,
           href: "/checklist",
         });
@@ -164,7 +204,7 @@ export async function GET(req: NextRequest) {
 
       return NextResponse.json({
         date: today,
-        items: items.slice(0, 8),
+        items: items.slice(0, MAX_ITEMS),
         inboxOpenCount: Number(inboxCount.rows[0]?.c ?? 0),
         gymStreak: streak,
         checklistDoneToday: checklistDone,
