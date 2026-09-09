@@ -7,6 +7,7 @@ import { useState } from "react";
 import { fetcher, apiPatch, apiPost } from "@/lib/fetcher";
 import { PageHeader } from "@/components/PageHeader";
 import { EmptyState } from "@/components/EmptyState";
+import { DigestPanel } from "@/components/DigestPanel";
 import type { InboxItem } from "@/lib/types";
 
 interface InboxRow extends InboxItem {
@@ -91,6 +92,11 @@ export default function InboxPage() {
           Last mail sync failed: {gmail.last_error}
         </div>
       )}
+
+      {/* What already happened, above what still needs you. The order is
+          deliberate: seeing the work done first is what makes the remaining
+          questions feel like a short list rather than a backlog. */}
+      <DigestPanel />
 
       {isLoading ? (
         <div className="card p-8 text-center text-sm" style={{ color: "var(--ink-muted)" }}>

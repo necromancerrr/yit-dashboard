@@ -324,6 +324,34 @@ CREATE TABLE IF NOT EXISTS inbox_items (
   resolved_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_inbox_state ON inbox_items(state, created_at);
+
+-- Every write the sync made on its own, with enough recorded to explain it and
+-- to take it back. This is what makes acting unattended defensible: without a
+-- journal, an automatic write is indistinguishable from one you made and
+-- forgot, and there is nothing to undo it with.
+CREATE TABLE IF NOT EXISTS automation_actions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  run_id TEXT NOT NULL,
+  domain TEXT NOT NULL,
+  tier TEXT NOT NULL,
+  action TEXT NOT NULL,
+  target_table TEXT NOT NULL,
+  target_id INTEGER NOT NULL,
+  external_event_id INTEGER,
+  summary TEXT NOT NULL,
+  because TEXT NOT NULL,
+  payload TEXT NOT NULL,
+  -- Hash of the fields as written. Undo compares against it, so an edit you
+  -- made afterwards is never silently destroyed.
+  fingerprint TEXT NOT NULL,
+  score REAL,
+  applied_at TEXT NOT NULL DEFAULT (datetime('now')),
+  reviewed_at TEXT,
+  undone_at TEXT,
+  undo_result TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_automation_run ON automation_actions(run_id, applied_at);
+CREATE INDEX IF NOT EXISTS idx_automation_open ON automation_actions(reviewed_at, applied_at);
 `;
 
 /**
@@ -410,6 +438,25 @@ async function ensureInboxProposalColumns(): Promise<void> {
   // its original columns, so nothing downstream of it changes.
   await ensureColumn("inbox_items", "domain", "TEXT");
   await ensureColumn("inbox_items", "proposed_payload", "TEXT");
+}
+
+/**
+ * Where a row came from.
+ *
+ * Two columns rather than a provenance table, because the UI needs exactly one
+ * thing from them: a small "from email" marker, so a row the sync created is
+ * never mistaken for one you typed. That marker is most of the trust the
+ * feature needs.
+ *
+ * These tables exist in every deployed database, so `CREATE TABLE IF NOT
+ * EXISTS` will not touch them and a bare ALTER inside SCHEMA would throw on the
+ * second boot.
+ */
+async function ensureProvenanceColumns(): Promise<void> {
+  for (const table of ["school_tasks", "finance_transactions"]) {
+    await ensureColumn(table, "source", "TEXT");
+    await ensureColumn(table, "external_event_id", "INTEGER");
+  }
 }
 
 const APPLICATION_STATUSES: ApplicationStatus[] = [
@@ -513,6 +560,7 @@ async function migrate(): Promise<void> {
     await db.execute(statement);
   }
   await ensureInboxProposalColumns();
+  await ensureProvenanceColumns();
   await runOnce("2026-08-applications-from-interviews", backfillApplicationsFromInterviews);
   await runOnce("2026-08-inbox-create-proposals-from-unmatched-email", backfillInboxCreateProposals);
 }

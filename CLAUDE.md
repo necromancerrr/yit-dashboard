@@ -98,6 +98,10 @@ src/
     search.ts             # LIKE scan across every table (server-only)
     search-types.ts       # client-safe search shapes + section labels
     palette.ts            # command-palette destinations + matcher (pure)
+    autonomy/             # how much the sync may do on its own
+      policy.ts           #   decideTier() — pure, no DB, no clock
+      journal.ts          #   the only writer of automation_actions; undo
+      digest-types.ts     #   client-safe shapes (journal imports node:fs)
     recurring.ts          # subscription detection from finance rows (pure)
     money-period.ts       # period windows + period-over-period totals (pure)
     setup-status.ts       # configuration checks; never returns a secret
@@ -173,11 +177,11 @@ dev hot-reloads don't open new connections. The whole schema lives in the
 EXISTS` statements, split on `;` and executed once by `ensureDb()` (memoized on
 `globalThis.__dashboardDbReady`).
 
-Sixteen tables. The originals — `gym_logs`, `leetcode_logs`, `interviews`,
+Seventeen tables. The originals — `gym_logs`, `leetcode_logs`, `interviews`,
 `school_tasks`, `finance_transactions`, `checklist_items`,
 `checklist_completions`, `passkeys` — plus `shared_images`, `crypto_holdings`
 and the Yit OS set: `applications`, `application_events`, `inbox_items`, `external_events`,
-`integrations`, `schema_migrations`.
+`integrations`, `schema_migrations`, `automation_actions`.
 `snake_case` columns; dates are `TEXT` ISO `YYYY-MM-DD`; booleans are
 `INTEGER` 0/1.
 
@@ -301,6 +305,7 @@ metadata, `Nav`, the login page, and the generated icons. Keep it that way.
 | `AI_PROVIDER` | no | text AI provider: defaults to `deepseek`; use `none` to disable or `anthropic` for the legacy provider |
 | `AI_MODEL` | no | text AI model override; DeepSeek defaults to `deepseek-v4-flash` |
 | `DEEPSEEK_VISION_MODEL` | no | opt-in vision model for DeepSeek; without it screenshot import is off for that provider |
+| `AUTOMATION_MODE` | no | `off` \| `assist` (default — today's behaviour) \| `auto`. Anything unrecognised means `assist` |
 | `APP_TIMEZONE` | no | IANA zone the day rolls over in (streaks, "today", checklist reset). Not `TZ` — reserved on Vercel |
 | `DATABASE_URL` | no | libSQL/Turso URL; defaults to local file |
 | `DATABASE_AUTH_TOKEN` | no | Turso token |
@@ -409,6 +414,71 @@ That is what stops nagging: a still-stale application re-derives to the same
 key and updates its row instead of adding another, and a dismissed item stays
 dismissed. Any new producer must pick a key with the same property.
 
+### Autonomy: act only where you can prove it and undo it
+
+This **supersedes "propose before create"** for the narrow set of writes that
+clear the bar in `src/lib/autonomy/policy.ts`. The replacement doctrine is
+narrower, not looser:
+
+> A write the sync makes on its own must be **journaled**, attributable to a
+> message, **reversible**, and inside the run's **budget**. Everything else
+> still proposes.
+
+`policy.ts` is pure — no database, no clock, and the mode and budget are passed
+in — for the same reason `career-status.ts` is: the whole policy is testable
+against fixtures, and the UI can show the same sentence the pipeline enforced.
+Four tiers, named for what you experience: `ask`, `act_tell` (written, in the
+digest, with an undo), `act_log` (written, visible if looked for), `never`.
+
+`AUTOMATION_MODE` gates it — `off`, `assist` (the default, and exactly today's
+behaviour), `auto`. **Anything unrecognised parses as `assist`**, so a typo can
+never widen what the app may do, and nobody is opted into autonomy by
+upgrading.
+
+**The never-list is not threshold-based, so it cannot be tuned into allowing
+something.** Creating a career application (an application is an *identity*, and
+a wrong one becomes a permanent candidate every future message is matched
+against), anything a model read, an ambiguous match, income of any size, a
+school task with no date the message actually stated, a course that fell back to
+the generic label, and anything past the run budget.
+
+`src/lib/autonomy/journal.ts` is the only writer of `automation_actions`, and
+undo is **durable** — a receipt auto-applied in March is still undoable in June,
+because the journal is permanent and the moment you notice a wrong row is not
+something the app gets to schedule. Undo has three outcomes and the middle one
+is the point: `reverted`, `kept_edited` (you already changed the row, so it is
+left exactly as you left it — undo must never cost an edit you made
+deliberately), and `gone`.
+
+Career reversal **appends** a corrective manual event rather than deleting one:
+`application_events` stays append-only, because a timeline explaining a status
+you later corrected is the whole point of the log.
+
+Rules worth keeping when extending this:
+
+- **Journal the written fields, not the row.** The fingerprint is computed over
+  exactly what was written, so a bumped `updated_at` is not mistaken for an
+  edit and a real edit is never destroyed.
+- **The budget is the run's, not a domain's.** `AUTO_APPLY_MAX_PER_RUN` (10)
+  bounds the blast radius of a backfill, a cursor rewind, or a classifier
+  regression: past it, everything becomes questions. Nothing is lost — a long
+  inbox is a recoverable afternoon, a hundred silent ledger rows is not.
+- **Silence is never consent.** `reviewed_at` is set only by an explicit "looks
+  right" or an undo. A row nobody looked at is not evidence of anything, so a
+  system being ignored must become *less* autonomous, not more. This is why the
+  trust ledger (Stage 3, `docs/inbox-autonomy.md`) is deliberately not built
+  yet.
+- **Every automated row carries its provenance.** `source` and
+  `external_event_id` on `school_tasks` and `finance_transactions`, rendered as
+  a small `<FromEmail>` marker. A machine write that looks identical to yours is
+  the failure that costs the most trust: you find a transaction you do not
+  remember and cannot tell whether you forgot it or the machine invented it.
+- The brain owns **policy** — how much to act, why, and how to take it back. It
+  does not classify (rules first, model second is unchanged) and it does not
+  rank (`/api/today` still sorts by real dates in SQL). A ranking cannot be
+  reversed, only re-rolled, and everything here leans on decisions that can be
+  shown and undone.
+
 ### AI is additive and never required
 
 Everything under `src/lib/ai/` is optional. `getAIProvider()` returns `null`
@@ -465,7 +535,8 @@ every run, and testable against fixtures; a model is none of those.
 **Ingestion proposes before it creates.** A message about a company with no
 application becomes an Inbox item carrying the proposed company, role and
 status. Confirming that item creates the Career row; the sync itself never
-invents an application without a user click.
+invents an application without a user click — and that one, uniquely, is on the
+never-list rather than merely below a threshold (see **Autonomy** above).
 
 **Auto-apply is narrow.** Only deterministic signals, above the confidence bar,
 with an unambiguous match, are written straight through — and `applyEvent()`
@@ -496,9 +567,13 @@ payload. It follows the same contracts as the career path:
 
 - **Rules first, model second.** `classifyDomain()` returns `null` to mean
   "needs judgement" rather than guessing. Career keeps its own path untouched.
-- **Propose before create.** Nothing is written to `school_tasks` or
-  `finance_transactions` by the sync. The proposal lands in the Inbox and
-  *confirming* it creates the row, in `api/inbox/[id]/route.ts`.
+- **Propose before create — unless policy says otherwise.** Under the default
+  `AUTOMATION_MODE=assist` nothing is written to `school_tasks` or
+  `finance_transactions` by the sync: the proposal lands in the Inbox and
+  *confirming* it creates the row, in `api/inbox/[id]/route.ts`. Under
+  `AUTOMATION_MODE=auto`, a receipt from a billing sender under $100 (or an LMS
+  message with a date it actually stated) is written directly, journaled, and
+  undoable from the digest. See **Autonomy** above.
 - **Dedupe by situation.** Keys are `school:<course>:<title>:<due>` and
   `money:<merchant>:<amount>:<date>` — the same receipt re-derives to the same
   key and updates in place, so a resent email never stacks a second copy.
