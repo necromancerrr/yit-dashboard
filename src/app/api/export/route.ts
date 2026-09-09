@@ -4,6 +4,18 @@ import { handleRoute, withDb, todayISO } from "@/lib/api-helpers";
 
 // Full data export — every table, as one JSON file. This exists so nothing
 // you log here is ever locked in: you can always get a complete copy out.
+// Three tables are deliberately absent, and adding them would be a mistake:
+//
+// - `passkeys` holds credential material. An export is a file that ends up in
+//   cloud storage and email attachments; login credentials do not belong in
+//   one, and the device list route omits them for the same reason.
+// - `schema_migrations` is bookkeeping about this database, not data about the
+//   owner. Restoring it into a fresh database would suppress backfills that
+//   still need to run.
+// - `shared_images` is a transient handoff, deleted as it is read. Anything
+//   still in it is in flight, not history.
+//
+// Every other table belongs here. If you add one, add it here too.
 export async function GET() {
   return handleRoute(async () => {
     return withDb(async () => {
