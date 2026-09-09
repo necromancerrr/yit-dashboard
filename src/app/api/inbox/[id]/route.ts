@@ -5,6 +5,7 @@ import { handleRoute, jsonError, withDb } from "@/lib/api-helpers";
 import { applyEvent, ALL_STATUSES } from "@/lib/career";
 import { todayISO } from "@/lib/date";
 import { matchApplication, type MatchCandidate } from "@/lib/ingest/match";
+import { recordConfirmation, scopeKeyFor, type RuleDomain } from "@/lib/autonomy/trust";
 import type { ApplicationStatus } from "@/lib/types";
 
 const updateSchema = z.object({
@@ -220,6 +221,20 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       // is for Career. Ingestion never writes to these tables on its own.
       if (body.state === "confirmed" && item.domain) {
         await createFromDomainProposal(item);
+      }
+
+      // Confirming is the only thing that grows a sender's standing. Dismissing
+      // does not demote — you dismissing a proposal usually means "not now" or
+      // "I already logged that", not "this was read wrongly" — and ignoring it
+      // does nothing at all, because silence is never consent.
+      if (body.state === "confirmed" && item.external_event_id) {
+        const sender = await db.execute({
+          sql: "SELECT sender FROM external_events WHERE id = ?",
+          args: [Number(item.external_event_id)],
+        });
+        const scopeKey = scopeKeyFor((sender.rows[0]?.sender as string | null) ?? null);
+        const ruleDomain = ((item.domain as string | null) ?? "career") as RuleDomain;
+        await recordConfirmation(ruleDomain, scopeKey);
       }
 
       await db.execute({

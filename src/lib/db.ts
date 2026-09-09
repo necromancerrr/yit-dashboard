@@ -2,7 +2,8 @@ import { createClient, type Client } from "@libsql/client";
 import fs from "node:fs";
 import path from "node:path";
 import { classifyDeterministic } from "@/lib/ingest/classify";
-import { parseSender } from "@/lib/ingest/normalize";
+import { parseSender, senderDomain } from "@/lib/ingest/normalize";
+import { TRUST_PROMOTION } from "@/lib/autonomy/policy";
 import type { ApplicationStatus } from "@/lib/types";
 
 const DEFAULT_LOCAL_PATH = path.join(process.cwd(), "db", "local.db");
@@ -340,6 +341,12 @@ CREATE TABLE IF NOT EXISTS automation_actions (
   external_event_id INTEGER,
   summary TEXT NOT NULL,
   because TEXT NOT NULL,
+  -- The sender domain that authorised this, so undo can demote it without a
+  -- join and the digest can name the rule that fired.
+  scope_key TEXT,
+  -- Set once, when an edit to the written row is first noticed. A correction
+  -- must count exactly once, however many times the digest is read.
+  edited_at TEXT,
   payload TEXT NOT NULL,
   -- Hash of the fields as written. Undo compares against it, so an edit you
   -- made afterwards is never silently destroyed.
@@ -352,6 +359,32 @@ CREATE TABLE IF NOT EXISTS automation_actions (
 );
 CREATE INDEX IF NOT EXISTS idx_automation_run ON automation_actions(run_id, applied_at);
 CREATE INDEX IF NOT EXISTS idx_automation_open ON automation_actions(reviewed_at, applied_at);
+
+-- What each sender has earned. Autonomy is granted to a sender by being right,
+-- not by looking right: a billing-shaped address is a structural signal and
+-- says nothing about whether this particular sender has ever been correct.
+--
+-- Keyed on the envelope sender *domain*, never the display name. Display names
+-- are attacker-controlled; merchantFrom() prefers senderName for the category,
+-- which is fine for a label and unacceptable as an authorization key.
+CREATE TABLE IF NOT EXISTS automation_rules (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  domain TEXT NOT NULL,
+  scope TEXT NOT NULL DEFAULT 'sender_domain',
+  scope_key TEXT NOT NULL,
+  confirms INTEGER NOT NULL DEFAULT 0,
+  corrections INTEGER NOT NULL DEFAULT 0,
+  -- 'ask' | 'auto' | 'never'. 'never' is a hard override that no amount of
+  -- accumulated confidence overrules — it is how autonomy is taken back per
+  -- source rather than globally.
+  mode TEXT NOT NULL DEFAULT 'ask',
+  last_confirmed_at TEXT,
+  last_applied_at TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(domain, scope, scope_key)
+);
+CREATE INDEX IF NOT EXISTS idx_automation_rules_lookup ON automation_rules(domain, scope_key);
 `;
 
 /**
@@ -452,6 +485,17 @@ async function ensureInboxProposalColumns(): Promise<void> {
  * EXISTS` will not touch them and a bare ALTER inside SCHEMA would throw on the
  * second boot.
  */
+/**
+ * `automation_actions` shipped before the trust ledger did, so any database
+ * booted in between has the table without these two columns. They are in
+ * SCHEMA for new databases and added here for existing ones — a bare ALTER
+ * inside SCHEMA would throw on the second boot.
+ */
+async function ensureJournalColumns(): Promise<void> {
+  await ensureColumn("automation_actions", "scope_key", "TEXT");
+  await ensureColumn("automation_actions", "edited_at", "TEXT");
+}
+
 async function ensureProvenanceColumns(): Promise<void> {
   for (const table of ["school_tasks", "finance_transactions"]) {
     await ensureColumn(table, "source", "TEXT");
@@ -548,6 +592,59 @@ async function backfillInboxCreateProposals(): Promise<void> {
   }
 }
 
+/**
+ * Seed the trust ledger from confirmations you already made.
+ *
+ * Without this the feature is cold on day one: turning `AUTOMATION_MODE=auto`
+ * on would do nothing at all until three fresh confirmations accumulated per
+ * sender, which is indistinguishable from a broken switch. Every confirmed
+ * inbox item is an explicit act of agreement that already happened, so counting
+ * it is reading history rather than inventing evidence.
+ *
+ * Capped at the promotion bar. The backfill can carry a sender you have
+ * genuinely confirmed many times up to the edge of autonomy, but it cannot
+ * manufacture a reserve that would let a sender survive corrections it never
+ * earned its way past.
+ *
+ * A backfill and not a SCHEMA statement: re-running it would resurrect trust
+ * you have since revoked, which is precisely what `runOnce()` exists to
+ * prevent.
+ */
+async function seedTrustFromConfirmations(): Promise<void> {
+  const confirmed = await db.execute(
+    `SELECT COALESCE(i.domain, 'career') AS domain, e.sender AS sender, COUNT(*) AS n
+       FROM inbox_items i
+       JOIN external_events e ON e.id = i.external_event_id
+      WHERE i.state = 'confirmed' AND e.sender IS NOT NULL
+      GROUP BY domain, e.sender`
+  );
+
+  // Senders arrive as full addresses and several may share a domain, so they
+  // are folded here rather than in SQL — the key is the domain, never the
+  // display name or the local part.
+  const totals = new Map<string, number>();
+  for (const row of confirmed.rows) {
+    const email = String(row.sender);
+    if (!email.includes("@")) continue;
+    // senderDomain(), not a copy of it. The seed and the pipeline must key on
+    // the same string or the backfill credits senders the lookup never finds.
+    const domain = senderDomain(email);
+    if (!domain) continue;
+    const key = `${row.domain}\u0000${domain}`;
+    totals.set(key, (totals.get(key) ?? 0) + Number(row.n));
+  }
+
+  for (const [key, count] of totals) {
+    const [domain, scopeKey] = key.split("\u0000");
+    await db.execute({
+      sql: `INSERT INTO automation_rules (domain, scope, scope_key, confirms, last_confirmed_at)
+            VALUES (?, 'sender_domain', ?, ?, date('now'))
+            ON CONFLICT(domain, scope, scope_key) DO NOTHING`,
+      args: [domain, scopeKey, Math.min(count, TRUST_PROMOTION)],
+    });
+  }
+}
+
 async function migrate(): Promise<void> {
   // Strip `--` line comments before splitting on `;`. Prose explaining a table
   // will eventually contain a semicolon, and a naive split would slice that
@@ -561,8 +658,10 @@ async function migrate(): Promise<void> {
   }
   await ensureInboxProposalColumns();
   await ensureProvenanceColumns();
+  await ensureJournalColumns();
   await runOnce("2026-08-applications-from-interviews", backfillApplicationsFromInterviews);
   await runOnce("2026-08-inbox-create-proposals-from-unmatched-email", backfillInboxCreateProposals);
+  await runOnce("2026-09-autonomy-seed-trust-from-confirmed-inbox", seedTrustFromConfirmations);
 }
 
 export function ensureDb(): Promise<void> {

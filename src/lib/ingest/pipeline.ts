@@ -13,6 +13,8 @@ import {
   type RunContext,
 } from "@/lib/autonomy/policy";
 import { record, newRunId } from "@/lib/autonomy/journal";
+import { getRule, noteApplied, scopeKeyFor } from "@/lib/autonomy/trust";
+import { todayISO } from "@/lib/date";
 import type { CareerSignal, IngestOutcome, NormalizedMessage } from "@/lib/ingest/types";
 import type { ApplicationStatus } from "@/lib/types";
 
@@ -50,7 +52,13 @@ interface Run extends RunContext {
 }
 
 function startRun(): Run {
-  return { runId: newRunId(), mode: parseMode(process.env.AUTOMATION_MODE), actionsSoFar: 0 };
+  return {
+    runId: newRunId(),
+    mode: parseMode(process.env.AUTOMATION_MODE),
+    actionsSoFar: 0,
+    // Resolved once per run, so every lapse decision in the run agrees.
+    today: todayISO(),
+  };
 }
 
 /**
@@ -201,7 +209,12 @@ async function proposeLifeItem(
     life.domain === "money" && life.money
       ? await looksLikeDuplicateCharge(life.money.amount, life.money.date)
       : false;
-  const decision = decideDomainTier(life, run, { possibleDuplicate });
+  // What this sender has earned. A billing-shaped address says the mail looks
+  // like a receipt; the ledger says whether this sender has ever been read
+  // correctly, and only the second one is grounds for acting alone.
+  const scopeKey = scopeKeyFor(message.senderEmail);
+  const trust = await getRule(life.domain, scopeKey);
+  const decision = decideDomainTier(life, run, { possibleDuplicate, trust });
 
   if (tierActs(decision.tier) && life.domain === "money" && life.money) {
     const { date, type, category, amount, note } = life.money;
@@ -220,6 +233,7 @@ async function proposeLifeItem(
       targetTable: "finance_transactions",
       targetId: id,
       externalEventId,
+      scopeKey,
       summary: `-$${amount.toFixed(2)} ${category}`,
       because: `${life.reason} · ${decision.reason}`,
       // Exactly the fields written, so an edit you make afterwards is
@@ -227,6 +241,7 @@ async function proposeLifeItem(
       payload: { date, type, category, amount, note: note ?? null },
       score: life.confidence,
     });
+    await noteApplied("money", scopeKey);
     return { outcome: "applied", detail: `Money: ${category}`, domain: "money" };
   }
 
@@ -247,11 +262,13 @@ async function proposeLifeItem(
       targetTable: "school_tasks",
       targetId: id,
       externalEventId,
+      scopeKey,
       summary: `${course}: ${title}${dueDate ? ` — due ${dueDate}` : ""}`,
       because: `${life.reason} · ${decision.reason}`,
       payload: { course, title, due_date: dueDate, status: "Pending" },
       score: life.confidence,
     });
+    await noteApplied("school", scopeKey);
     return { outcome: "applied", detail: `School: ${course}`, domain: "school" };
   }
 
@@ -406,6 +423,7 @@ async function processMessage(
         targetTable: "applications",
         targetId: match.applicationId,
         externalEventId,
+        scopeKey: scopeKeyFor(message.senderEmail),
         summary: `${label} → ${signal.status}`,
         because: `${signal.reasoning} · ${decision.reason}`,
         payload: { fromStatus, toStatus: signal.status, occurredOn: message.receivedOn },

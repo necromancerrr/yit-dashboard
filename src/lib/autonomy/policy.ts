@@ -80,6 +80,131 @@ export const AUTO_APPLY_MAX_AMOUNT = 100;
  */
 export const AUTO_APPLY_MAX_PER_RUN = 10;
 
+/**
+ * How many clean confirmations earn a sender the right to act unattended.
+ *
+ * A judgement, not a derivation. Higher is safer and slower to feel automatic.
+ */
+export const TRUST_PROMOTION = 3;
+
+/**
+ * A sender goes quiet for this long before its record starts to lapse.
+ *
+ * A merchant you stopped using should not stay trusted forever, and — more to
+ * the point — a promotion earned under one email template should not outlive
+ * the template. Ninety days of silence is the point at which "this sender is
+ * reliable" stops being a claim about the present.
+ */
+export const TRUST_IDLE_DAYS = 90;
+
+/** After the idle period, one confirmation lapses per this many further days. */
+export const TRUST_DECAY_EVERY_DAYS = 30;
+
+/** What the ledger holds about one sender, in one domain. */
+export interface TrustRecord {
+  /** Envelope sender domain, lowercased. Never a display name. */
+  scopeKey: string;
+  confirms: number;
+  corrections: number;
+  mode: "ask" | "auto" | "never";
+  /** ISO date of the last explicit confirmation, or null. */
+  lastConfirmedAt: string | null;
+  /** ISO date of the last unattended write, or null. */
+  lastAppliedAt: string | null;
+}
+
+/** Whole days between two ISO dates, in UTC space so DST cannot shorten one. */
+function daysBetweenISO(from: string, to: string): number {
+  const a = Date.UTC(+from.slice(0, 4), +from.slice(5, 7) - 1, +from.slice(8, 10));
+  const b = Date.UTC(+to.slice(0, 4), +to.slice(5, 7) - 1, +to.slice(8, 10));
+  return Math.round((b - a) / 86_400_000);
+}
+
+/**
+ * Confirmations still standing today, after lapse.
+ *
+ * Computed on read rather than by a cron, which is this repo's convention —
+ * see `rolloverRecurringChecklist()`. Nothing has to run for a stale record to
+ * stop counting.
+ */
+export function effectiveConfirms(record: TrustRecord, today: string): number {
+  if (record.confirms <= 0) return 0;
+  const last =
+    [record.lastConfirmedAt, record.lastAppliedAt].filter(Boolean).sort().pop() ?? null;
+  if (!last) return record.confirms;
+
+  const idle = daysBetweenISO(last, today);
+  if (idle <= TRUST_IDLE_DAYS) return record.confirms;
+  const lapsed = Math.floor((idle - TRUST_IDLE_DAYS) / TRUST_DECAY_EVERY_DAYS);
+  return Math.max(0, record.confirms - lapsed);
+}
+
+/**
+ * How many confirmations this sender needs before it may act.
+ *
+ * Every past correction raises the bar by one. A mistake is recoverable — an
+ * automatic permanent ban from a single mis-parse would accumulate silently
+ * until nothing was ever automatic, which is indistinguishable from the
+ * feature being broken — but it is recoverable at increasing cost, so a sender
+ * whose mail is structurally hard to read drifts out of autonomy on its own.
+ *
+ * A *permanent* ban is `mode: "never"`, which is a decision you make rather
+ * than one the counter makes for you.
+ */
+export function requiredConfirms(record: TrustRecord): number {
+  return TRUST_PROMOTION + record.corrections;
+}
+
+export interface TrustVerdict {
+  trusted: boolean;
+  /** Confirmations standing today. */
+  standing: number;
+  needed: number;
+  /** Shown verbatim when something is held back for want of trust. */
+  reason: string;
+}
+
+export function assessTrust(record: TrustRecord | null, today: string): TrustVerdict {
+  if (!record) {
+    return {
+      trusted: false,
+      standing: 0,
+      needed: TRUST_PROMOTION,
+      reason: `New sender — confirm ${TRUST_PROMOTION} of these and it can act on its own`,
+    };
+  }
+  if (record.mode === "never") {
+    // An explicit opt-out is absolute, mirroring how AI_PROVIDER=none is
+    // honoured absolutely. No accumulated confidence overrules it.
+    return { trusted: false, standing: 0, needed: Infinity, reason: "You turned this sender off" };
+  }
+
+  const standing = effectiveConfirms(record, today);
+  const needed = requiredConfirms(record);
+
+  if (record.mode === "auto") {
+    // A deliberate grant, so it does not wait for the counter.
+    return { trusted: true, standing, needed, reason: "You allowed this sender" };
+  }
+  if (standing >= needed) {
+    return {
+      trusted: true,
+      standing,
+      needed,
+      reason: `${standing} confirmed, ${record.corrections} corrected`,
+    };
+  }
+  return {
+    trusted: false,
+    standing,
+    needed,
+    reason:
+      record.corrections > 0
+        ? `Got one wrong before — ${standing} of ${needed} confirmations since`
+        : `${standing} of ${needed} confirmations so far`,
+  };
+}
+
 export function parseMode(raw: string | undefined): AutomationMode {
   const value = raw?.trim().toLowerCase();
   if (value === "off" || value === "auto") return value;
@@ -102,6 +227,11 @@ export interface RunContext {
   /** Rows already written unattended in this run. */
   actionsSoFar: number;
   maxPerRun?: number;
+  /**
+   * The day the run is happening, for lapse. Passed in rather than read from a
+   * clock so the whole policy stays pure and pinnable in tests.
+   */
+  today?: string;
 }
 
 const ASK = (reason: string): TierDecision => ({ tier: "ask", reason });
@@ -144,6 +274,8 @@ export interface MoneyContext {
   method: "deterministic" | "ai";
   /** True when another transaction of the same amount is within a couple of days. */
   possibleDuplicate?: boolean;
+  /** What this sender has earned. Null for a sender never seen before. */
+  trust?: TrustRecord | null;
 }
 
 export function decideMoneyTier(ctx: MoneyContext, run: RunContext): TierDecision {
@@ -169,8 +301,14 @@ export function decideMoneyTier(ctx: MoneyContext, run: RunContext): TierDecisio
     // different senders, so dedupe_key differs and nothing else would catch it.
     return ASK("Looks like a charge that is already recorded");
   }
+  // A billing-shaped address is a *structural* signal: it says the mail looks
+  // like a receipt, and nothing at all about whether this particular sender has
+  // ever been read correctly. Autonomy is earned by being right, not by looking
+  // right, so the ledger is a gate and not a bonus.
+  const trust = assessTrust(ctx.trust ?? null, run.today ?? "1970-01-01");
+  if (!trust.trusted) return ASK(trust.reason);
   if (overBudget(run)) return ASK(budgetReason(run));
-  return { tier: "act_tell", reason: "Receipt from a billing sender, under the limit" };
+  return { tier: "act_tell", reason: `Receipt under the limit · ${trust.reason}` };
 }
 
 export interface SchoolContext {
@@ -180,6 +318,7 @@ export interface SchoolContext {
   dueDate: string | null;
   /** False when the course fell back to the generic label. */
   courseParsed: boolean;
+  trust?: TrustRecord | null;
 }
 
 export function decideSchoolTier(ctx: SchoolContext, run: RunContext): TierDecision {
@@ -195,8 +334,13 @@ export function decideSchoolTier(ctx: SchoolContext, run: RunContext): TierDecis
     return ASK("No date written in the message");
   }
   if (!ctx.courseParsed) return ASK("Could not tell which course this is for");
+  // School is gated on trust for the same reason money is, and more so: a wrong
+  // deadline is the more expensive error, because you plan around it without
+  // ever questioning it.
+  const trust = assessTrust(ctx.trust ?? null, run.today ?? "1970-01-01");
+  if (!trust.trusted) return ASK(trust.reason);
   if (overBudget(run)) return ASK(budgetReason(run));
-  return { tier: "act_tell", reason: "Course platform message with a stated date" };
+  return { tier: "act_tell", reason: `Stated date from a course platform · ${trust.reason}` };
 }
 
 function limit(run: RunContext): number {
@@ -226,7 +370,11 @@ export function tierActs(tier: Tier): boolean {
 export function decideDomainTier(
   signal: DomainSignal,
   run: RunContext,
-  opts: { method?: "deterministic" | "ai"; possibleDuplicate?: boolean } = {}
+  opts: {
+    method?: "deterministic" | "ai";
+    possibleDuplicate?: boolean;
+    trust?: TrustRecord | null;
+  } = {}
 ): TierDecision {
   const method = opts.method ?? "deterministic";
   if (signal.domain === "money") {
@@ -238,6 +386,7 @@ export function decideDomainTier(
         type: signal.money.type,
         method,
         possibleDuplicate: opts.possibleDuplicate,
+        trust: opts.trust,
       },
       run
     );
@@ -249,6 +398,7 @@ export function decideDomainTier(
       method,
       dueDate: signal.school.dueDate,
       courseParsed: signal.school.course.trim().toLowerCase() !== "course",
+      trust: opts.trust,
     },
     run
   );

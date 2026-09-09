@@ -19,6 +19,8 @@ export interface DigestAction {
   because: string;
   appliedAt: string;
   reviewed: boolean;
+  /** True once you changed the row the sync wrote. Counts as a correction. */
+  edited: boolean;
   undoneAt: string | null;
   undoResult: UndoResult | null;
   target: { table: string; id: number };
