@@ -77,8 +77,21 @@ function subscribeToLock(onChange: () => void): () => void {
   };
 }
 
+/**
+ * Whether the screen is currently locked, for anything that renders *outside*
+ * the inert subtree.
+ *
+ * `inert` stops focus and clicks, but a document-level key listener keeps
+ * firing — so a global shortcut would happily open its own panel on top of the
+ * lock screen, with the contents of your database in it. Anything bound to the
+ * document reads this first.
+ */
+export function useIsLocked(): boolean {
+  return useSyncExternalStore(subscribeToLock, readStoredLock, () => false);
+}
+
 export function LockGuard({ children }: { children: React.ReactNode }) {
-  const locked = useSyncExternalStore(subscribeToLock, readStoredLock, () => false);
+  const locked = useIsLocked();
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);

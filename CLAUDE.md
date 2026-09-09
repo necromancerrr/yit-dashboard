@@ -77,7 +77,8 @@ src/
       export/route.ts     # every table as one downloadable JSON file
       setup/route.ts      # configuration report; never returns a secret
       share/              # (app-level /share) OS share-sheet target
-  components/             # Nav, Heatmap, StatCard, Modal, PageHeader, EmptyState, Logo, ToastProvider
+  components/             # Nav, Heatmap, StatCard, Modal, PageHeader, EmptyState, Logo,
+                          #   ToastProvider, LockGuard, OfflineBanner, CommandPalette
   lib/
     db.ts                 # libSQL client (global singleton) + SCHEMA + ensureDb()
     auth.ts               # password verify, JWT sign/verify, cookie options
@@ -94,6 +95,12 @@ src/
     career-status.ts      # pipeline vocabulary + transition rules (pure, client-safe)
     career.ts             # applyEvent() — the only writer of applications.status
     inbox.ts              # derives inbox items from existing data (no email needed)
+    search.ts             # LIKE scan across every table (server-only)
+    search-types.ts       # client-safe search shapes + section labels
+    palette.ts            # command-palette destinations + matcher (pure)
+    recurring.ts          # subscription detection from finance rows (pure)
+    setup-status.ts       # configuration checks; never returns a secret
+    quick-add.ts          # reads a typed line with the ingestion rules
     ai/                   # AIProvider interface + registry; server-only, optional
     ingest/               # mail -> classify -> match -> propose/apply
       normalize.ts        #   pure string work (forwards, senders, companies)
@@ -528,6 +535,36 @@ looser rule still rejects groceries.
 The headline figure is annual cost, not the per-charge amount — `$11.99` is
 nothing and `$141 a year` is a decision — and the list sorts by it, so the most
 expensive commitment is the first thing read.
+
+## Command palette (⌘K)
+
+`src/components/CommandPalette.tsx`, mounted once in the authenticated layout.
+It jumps to a section or finds a row, and it does **not** write anything —
+quick add lives on Today where the proposal is previewed first, and Enter on a
+half-typed line is far too cheap for something that lands in your ledger. Any
+palette action must stay read-only for that reason.
+
+Destinations come from `src/lib/palette.ts` (pure, so `tests/palette.test.ts`
+can check the matching without a DOM) and are listed *before* search results,
+because a section is a place you know exists and should never rank below a
+transaction that happens to contain the word. Matching is substring, not fuzzy:
+a confident jump to the wrong page is worse than an empty list.
+
+Two things worth knowing before touching it:
+
+- **It reads the lock first.** `LockGuard` puts the app in an `inert` subtree,
+  which stops clicks and focus but *not* a listener bound to the document — so
+  without `useIsLocked()` the shortcut would open a searchable window onto the
+  database on top of the lock screen. Anything else bound to the document owes
+  the same check.
+- **The cursor is clamped during render**, not corrected in an effect. The list
+  shrinks between keystrokes, and an effect would leave the highlight on a row
+  that no longer exists for a frame.
+
+`tests/palette.test.ts` also asserts every `NAV_ITEMS` entry has a palette
+destination — the two lists are maintained by hand in different files, and a
+section added to one and forgotten in the other is invisible until someone goes
+looking.
 
 ## Offline (PWA)
 
