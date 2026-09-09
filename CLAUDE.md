@@ -90,10 +90,12 @@ src/
     ai/                   # AIProvider interface + registry; server-only, optional
     ingest/               # mail -> classify -> match -> propose/apply
       normalize.ts        #   pure string work (forwards, senders, companies)
+      text.ts             #   shared text readers: extractDate/extractAmount, vocabulary
       classify.ts         #   deterministic rules; null means "ask the model"
       match.ts            #   which application a message belongs to
       pipeline.ts         #   orchestration + dedupe (the only db writer here)
       gmail.ts            #   Gmail REST client; metadata only, never bodies
+    quick-add.ts          # parses a typed line into a school/money proposal
     useUndoableDelete.ts  # optimistic delete with a 5s undo window
   proxy.ts                # auth gate (Next.js 16 renamed middleware.ts → proxy.ts)
 scripts/hash-password.mjs
@@ -442,6 +444,24 @@ an email, and the schema is what stands between a malformed proposal and your
 ledger. Both columns are added via `ensureColumn()`, not `SCHEMA`: an
 `ALTER TABLE` inside `SCHEMA` would throw on the second boot.
 
+### Quick add reads typed text with the ingestion rules
+
+The box on Today (`src/app/(app)/QuickAdd.tsx`, parser in `src/lib/quick-add.ts`)
+turns `coffee $4.50` or `CSE143 pset due 4/2` into the same proposals email
+ingestion produces. It does **not** reimplement the readers: `extractDate`,
+`extractAmount` and the shared vocabulary live in `src/lib/ingest/text.ts` —
+pure, client-safe, and imported by both `domains.ts` and `quick-add.ts`, so a
+line you type and a receipt you are sent can never be read by two rulesets that
+have drifted apart. `domains.ts` re-exports the readers, so existing importers
+are unaffected.
+
+The same two refusals hold: a relative date ("due Friday") yields a task with
+no due date rather than a computed one, and a line with no `$` amount is never
+proposed as money. The preview is derived during render — there is no effect
+mirroring the parse into state — and confirming POSTs to the ordinary
+`/api/school` and `/api/finance` routes. No new insert path, and no model call:
+this is deterministic parsing, which is the point.
+
 ## Tests
 
 `npm test` runs `node:test` through `tsx` (which resolves the `@/` alias).
@@ -449,6 +469,9 @@ ledger. Both columns are added via `ensureColumn()`, not `SCHEMA`: an
 - `tests/fixtures/emails.ts` — realistic recruiting mail. Add a fixture here
   when you meet a template the rules get wrong; it is the regression suite for
   classification.
+- `tests/domains.test.ts` and `tests/quick-add.test.ts` pin the shared text
+  readers from both sides — mail and typed input. A rule changed for one must
+  keep the other green.
 - `tests/pipeline.test.ts` runs the real pipeline against a temporary SQLite
   file. `DATABASE_URL` is set *before* importing `@/lib/db`, since that module
   resolves it once at load, and `AI_PROVIDER=none` keeps the tests

@@ -14,6 +14,7 @@ import { fetcher } from "@/lib/fetcher";
 import { PageHeader } from "@/components/PageHeader";
 import { getDisplayName } from "@/lib/identity";
 import type { TodayData, TodayItem } from "@/lib/types";
+import { QuickAdd } from "./QuickAdd";
 
 /**
  * Today — the primary Yit OS screen.
@@ -110,6 +111,11 @@ export default function TodayPage() {
           day: "numeric",
         })}
       />
+
+      {/* Capture, before attention: the cheapest moment to record something is
+          the moment you thought of it, and it belongs on the screen you are
+          already looking at. */}
+      <QuickAdd />
 
       {/* Attention */}
       <div className="card mb-4">
