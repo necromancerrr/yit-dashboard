@@ -23,6 +23,13 @@ export default function manifest(): MetadataRoute.Manifest {
         files: [{ name: "image", accept: ["image/png", "image/jpeg", "image/webp"] }],
       },
     },
+    // Long-press the home-screen icon. Three destinations, because the OS
+    // shows only a handful and a list nobody can scan is worse than none.
+    shortcuts: [
+      { name: "Add money", short_name: "Money", url: "/money" },
+      { name: "Inbox", short_name: "Inbox", url: "/inbox" },
+      { name: "Career", short_name: "Career", url: "/career" },
+    ],
     icons: [
       { src: "/icon-192", sizes: "192x192", type: "image/png", purpose: "any" },
       { src: "/icon-192", sizes: "192x192", type: "image/png", purpose: "maskable" },

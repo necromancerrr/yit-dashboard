@@ -15,6 +15,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { getDisplayName } from "@/lib/identity";
 import type { TodayData, TodayItem } from "@/lib/types";
 import { QuickAdd } from "./QuickAdd";
+import { SetupNotice } from "@/components/SetupNotice";
 
 /**
  * Today — the primary Yit OS screen.
@@ -115,6 +116,7 @@ export default function TodayPage() {
       {/* Capture, before attention: the cheapest moment to record something is
           the moment you thought of it, and it belongs on the screen you are
           already looking at. */}
+      <SetupNotice />
       <QuickAdd />
 
       {/* Attention */}
