@@ -334,8 +334,24 @@ update `.env.example` when adding a variable.
 4. Add the table to `/api/export` (and `/api/summary` if it belongs on the
    overview).
 5. Copy a page from `src/app/(app)/school/page.tsx` into `(app)/<name>/page.tsx`.
-6. Add the nav entry to `NAV_ITEMS` in `src/components/Nav.tsx` and a
-   `--cat-<name>` color token in `globals.css`.
+6. Add the nav entry to `NAV_ITEMS` in `src/components/Nav.tsx` (with a
+   `group`), a destination in `src/lib/palette.ts`, and a `--cat-<name>` color
+   token in `globals.css`. `tests/nav.test.ts` and `tests/palette.test.ts` fail
+   if you miss the last two.
+
+### Navigation: everything is reachable from a phone
+
+The bottom bar carries four tabs plus **More**, and the sheet behind More
+renders `overflowItems` — defined as the *complement* of the bar, never a
+second hand-written list. Before this, six of eleven destinations plus Export
+and Sign out existed only in the desktop sidebar: reachable by typing a URL and
+no other way. That stayed invisible precisely because the sidebar was complete.
+
+The sidebar groups items (`Each day` / `Your life` / `System`) and scrolls, so
+a short window clips nothing. The More sheet stores *which page it was opened
+on* rather than a boolean — navigating then closes it by derivation during
+render, because closing it from an effect is a `setState` in an effect body and
+the React Compiler lint rejects that outright.
 
 Not every feature deserves a nav entry. Crypto and recurring charges are panels
 inside Money (`money/CryptoPanel.tsx`, `money/RecurringPanel.tsx`), because each
