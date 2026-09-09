@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import useSWR from "swr";
 import Link from "next/link";
 import {
@@ -9,8 +10,9 @@ import {
   Flame,
   Inbox as InboxIcon,
   ArrowRight,
+  Check,
 } from "lucide-react";
-import { fetcher } from "@/lib/fetcher";
+import { fetcher, apiPatch } from "@/lib/fetcher";
 import { PageHeader } from "@/components/PageHeader";
 import { getDisplayName } from "@/lib/identity";
 import type { TodayData, TodayItem } from "@/lib/types";
@@ -58,25 +60,99 @@ function currency(n: number): string {
   });
 }
 
-function PriorityRow({ item, index }: { item: TodayItem; index: number }) {
+/**
+ * A habit is the one thing on this page you can *finish* from this page.
+ *
+ * Sending you to /checklist to tick a box you are already looking at is the
+ * single most repeated piece of friction in the app — it happens every day,
+ * for every habit. So the row carries its own checkbox, and the rank number is
+ * replaced by it: a row you can act on should not also be numbered as
+ * something to get to later.
+ *
+ * The tick is optimistic and then reconciled. `/api/today` re-ranks on every
+ * response, so waiting for the round trip means the row sits there looking
+ * unticked for as long as the network takes — on a phone, long enough to tap
+ * it twice.
+ */
+function HabitCheck({ item, onDone }: { item: TodayItem; onDone: () => void }) {
+  const [ticked, setTicked] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  async function tick(e: React.MouseEvent) {
+    // The row is a link; ticking it must not also navigate away from the page
+    // you just acted on.
+    e.preventDefault();
+    e.stopPropagation();
+    if (ticked) return;
+    setTicked(true);
+    setFailed(false);
+    try {
+      await apiPatch(`/api/checklist/${item.checklistItemId}`, { done: true });
+      // A beat before the list re-ranks, so the tick is actually seen. Without
+      // it the row vanishes the instant you touch it, which reads as "did that
+      // register?" rather than as completion.
+      setTimeout(onDone, 450);
+    } catch {
+      // Put the box back rather than leaving a tick that was never saved —
+      // a habit you believe is done and is not is worse than one you know is
+      // outstanding.
+      setTicked(false);
+      setFailed(true);
+    }
+  }
+
+  return (
+    <button
+      onClick={tick}
+      className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 border transition-colors"
+      style={{
+        borderColor: failed ? "var(--critical)" : ticked ? "var(--good)" : "var(--border)",
+        background: ticked ? "color-mix(in srgb, var(--good) 20%, transparent)" : "transparent",
+      }}
+      aria-label={failed ? `Could not complete ${item.title} — try again` : `Mark ${item.title} done`}
+      title={failed ? "That did not save. Try again." : undefined}
+    >
+      <Check size={14} color={ticked ? "var(--good)" : "var(--ink-muted)"} />
+    </button>
+  );
+}
+
+function PriorityRow({
+  item,
+  index,
+  onHabitDone,
+}: {
+  item: TodayItem;
+  index: number;
+  onHabitDone: () => void;
+}) {
   const Icon = KIND_ICON[item.kind];
   const color = KIND_COLOR[item.kind];
+  // The id, not the kind: a row without one can never be given a checkbox by
+  // accident.
+  const tickable = item.checklistItemId !== undefined;
   return (
     <li>
       <Link href={item.href} className="flex items-center gap-3 px-4 py-3 group">
-        <span
-          className="text-xs w-4 shrink-0 tabular-nums"
-          style={{ color: "var(--ink-muted)" }}
-          aria-hidden
-        >
-          {index + 1}
-        </span>
-        <span
-          className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
-          style={{ background: `color-mix(in srgb, ${color} 16%, transparent)` }}
-        >
-          <Icon size={14} color={color} />
-        </span>
+        {tickable ? (
+          <HabitCheck item={item} onDone={onHabitDone} />
+        ) : (
+          <span
+            className="text-xs w-4 shrink-0 tabular-nums"
+            style={{ color: "var(--ink-muted)" }}
+            aria-hidden
+          >
+            {index + 1}
+          </span>
+        )}
+        {!tickable && (
+          <span
+            className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+            style={{ background: `color-mix(in srgb, ${color} 16%, transparent)` }}
+          >
+            <Icon size={14} color={color} />
+          </span>
+        )}
         <span className="min-w-0 flex-1">
           <span className="block text-sm font-medium truncate">{item.title}</span>
           {item.detail && (
@@ -96,7 +172,7 @@ function PriorityRow({ item, index }: { item: TodayItem; index: number }) {
 }
 
 export default function TodayPage() {
-  const { data, isLoading } = useSWR<TodayData>("/api/today", fetcher, {
+  const { data, isLoading, mutate } = useSWR<TodayData>("/api/today", fetcher, {
     refreshInterval: 60_000,
   });
 
@@ -152,7 +228,7 @@ export default function TodayPage() {
         ) : (
           <ul className="divide-y" style={{ borderColor: "var(--border)" }}>
             {items.map((item, i) => (
-              <PriorityRow key={item.id} item={item} index={i} />
+              <PriorityRow key={item.id} item={item} index={i} onHabitDone={() => mutate()} />
             ))}
           </ul>
         )}

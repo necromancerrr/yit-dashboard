@@ -20,7 +20,22 @@ Reference: `src/lib/useWebAuthnSupport.ts`, `src/components/LockGuard.tsx`.
 
 **Prefer a value derived during render** over state mirrored from somewhere
 else. `src/app/(app)/money/CryptoPanel.tsx` derives its share-error message
-straight from the URL rather than syncing it into state.
+straight from the URL rather than syncing it into state. The same rule covers
+*clamping*: `CommandPalette` clamps its keyboard cursor during render, because
+the result list shrinks between keystrokes and an effect would leave the
+highlight on a row that no longer exists for a frame.
+
+**`useSearchParams()` needs a Suspense boundary above it, or `next build`
+fails outright** — not a warning, a failed export of that route. Adding it to
+`(app)/money/page.tsx` broke the build until the tab body was moved into a
+child under `<Suspense>`. Keep the page header outside the boundary so there is
+nothing to see while it resolves.
+
+**`inert` does not stop a listener bound to the document.** `LockGuard` renders
+the app in an inert subtree while locked, which blocks clicks and focus and
+nothing else — a global keyboard shortcut would happily open its own panel,
+full of your data, on top of the lock screen. Anything bound to `document` must
+call `useIsLocked()` first (`src/components/CommandPalette.tsx`).
 
 ## Dates
 
@@ -72,6 +87,37 @@ follow this.
 **Rules first, model second.** Deterministic classifiers return `null` to mean
 "needs judgement", and that null is the only thing that triggers a model call.
 Rules are free, offline, identical every run, and testable.
+
+## Derived data
+
+**A panel that derives its rows renders them and nothing else.** No add button,
+no inline edit. `money/RecurringPanel.tsx` is computed from
+`finance_transactions`; letting it also accept writes would give it two sources
+of truth, and it would quietly stop being true the first time the
+hand-maintained half was forgotten.
+
+**Detectors are pure, and take `today` as a parameter.** `src/lib/recurring.ts`
+and `src/lib/money-period.ts` touch no database and read no clock, which is the
+only reason their behaviour can be pinned against fixed dates. A comparison
+against the wrong previous month is invisible *and* wrong.
+
+**Every total names its period.** The Money cards used to sum whatever the list
+had loaded. A figure with no window attached is not wrong, it is unusable — you
+cannot tell if spending is up without knowing up since when.
+
+**Never state a percentage against zero.** `percentChange` returns `null`
+rather than "+100%" for a first month; a made-up number wearing the clothes of
+a measurement is worse than a blank.
+
+## Two hand-maintained lists need a test between them
+
+When the same fact lives in two files, add a test that reads both and fails on
+drift. It is crude and it is the only thing that catches this class of bug:
+
+- `tests/export.test.ts` — every table in `SCHEMA` is in `/api/export` or in a
+  named exclusion list. A table missed there still downloads a file that
+  *looks* complete; you find out when you need it.
+- `tests/palette.test.ts` — every `NAV_ITEMS` entry has a palette destination.
 
 ## Values
 

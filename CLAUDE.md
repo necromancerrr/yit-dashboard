@@ -236,6 +236,15 @@ than inventing a new style.
 - Responses are `{ items: [...] }`, `{ item: {...} }`, `{ ok: true }`, or
   `{ error: "…" }`.
 
+`/api/today` lists each unfinished recurring habit as its own row carrying a
+`checklistItemId`, and Today renders those with a checkbox rather than a rank
+number. **The id, not the kind, is what makes a row actionable** — nothing
+re-derives "is this a habit?", and a row without one can never be given a
+checkbox by accident. Past `HABITS_LISTED` (3) the rest collapse into one
+countable row, so a long habit list cannot bury the week's deadlines; the tick
+is optimistic and reverts on failure, because a habit you believe is done and
+is not is worse than one you know is outstanding.
+
 `/api/summary` is the one aggregate route: it fans out parallel queries via
 `Promise.all`, merges gym/LeetCode/checklist-completion dates into one heatmap
 count per day, and computes the gym streak backwards from today (tolerating a
