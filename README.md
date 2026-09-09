@@ -186,6 +186,34 @@ git remote add origin https://github.com/<your-username>/yit-dashboard.git
 git push -u origin main
 ```
 
+## Which key does what
+
+The app uses AI for two separate jobs, and they need different things:
+
+| Job | What it does | Needs |
+| --- | --- | --- |
+| **Reading text** | sorting email — recruiter, receipt, or deadline? | `DEEPSEEK_API_KEY` (or Anthropic) |
+| **Reading pictures** | the Scan button, reading a screenshot | `ANTHROPIC_API_KEY` |
+
+An API key is a password that lets this app use a company's AI; you get one from
+that company's console and pay for what you use.
+
+The two jobs are split because **DeepSeek's chat models cannot see images**. So
+`AI_PROVIDER=deepseek` keeps all the everyday text work on the cheaper provider,
+and Anthropic is reached *only* when you tap Scan — roughly a cent per
+screenshot. `getVisionProvider()` handles that fallback; you do not configure it
+twice.
+
+**Both are optional.** With neither, the dashboard works completely — email
+still syncs and is sorted by deterministic rules, and Scan simply reports that
+it cannot read images.
+
+Not sure what is set? **Open `/setup` in the app.** It reports every check and
+what each one costs when it is missing, without ever showing a key.
+
+⚠️ Environment variables are read when the app **builds**. Changing one in a
+hosting dashboard does nothing until you redeploy.
+
 ## Security notes
 
 - Set a real `AUTH_SECRET` before deploying anywhere reachable from the
