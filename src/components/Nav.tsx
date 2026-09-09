@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
+  Search,
   Sun,
   Inbox,
   Briefcase,
@@ -31,6 +32,7 @@ const NAV_ITEMS = [
   { href: "/money", label: "Money", icon: Wallet },
   { href: "/growth", label: "Growth", icon: Sprout },
   { href: "/checklist", label: "Checklist", icon: CheckSquare },
+  { href: "/search", label: "Search", icon: Search },
   { href: "/security", label: "Security", icon: Fingerprint },
   { href: "/setup", label: "Setup", icon: SlidersHorizontal },
 ];
