@@ -99,6 +99,7 @@ src/
     search-types.ts       # client-safe search shapes + section labels
     palette.ts            # command-palette destinations + matcher (pure)
     recurring.ts          # subscription detection from finance rows (pure)
+    money-period.ts       # period windows + period-over-period totals (pure)
     setup-status.ts       # configuration checks; never returns a secret
     quick-add.ts          # reads a typed line with the ingestion rules
     ai/                   # AIProvider interface + registry; server-only, optional
@@ -505,6 +506,34 @@ proposed as money. The preview is derived during render — there is no effect
 mirroring the parse into state — and confirming POSTs to the ordinary
 `/api/school` and `/api/finance` routes. No new insert path, and no model call:
 this is deterministic parsing, which is the point.
+## Money totals always name their period
+
+`src/lib/money-period.ts`. The cards on Cash flow used to total every row the
+list had loaded — up to the route's 300-row default, reaching back however far
+that went — while the empty state promised a "monthly picture". A figure with
+no period attached is not a *wrong* figure; it is one you cannot act on, since
+you cannot tell whether spending is up without knowing up since when.
+
+So the period is explicit (This month / Last 30 days / All time), the
+transaction list follows the same control — cards for this month above a ledger
+going back years reads as a bug even when both halves are correct — and every
+figure is paired with the same figure for the period before it.
+
+Rules that are easy to get wrong here:
+
+- **Months compare to months**, not to fixed 30-day blocks. February against
+  January is the comparison a person means, even though one is three days
+  shorter. The 30-day window includes today, so the two windows are equal
+  length and share no boundary day.
+- **`percentChange` returns `null` against zero.** "+100%" or "+∞" for a first
+  month is a made-up number wearing the clothes of a measurement; the UI says
+  "nothing in last month" instead.
+- **Up is not universally good.** More income is progress, more spending is
+  not, so `Comparison` takes `moreIsBetter` — colouring both green would make
+  the row meaningless.
+- The panel requests `?limit=5000` deliberately: totals over a truncated ledger
+  are silently wrong, and "All time" would quietly mean "the most recent 300".
+
 ## Recurring charges
 
 `src/lib/recurring.ts` finds subscriptions in transactions you already logged.
@@ -641,6 +670,18 @@ once. Load it before writing code rather than rediscovering them.
 ## Tests
 
 `npm test` runs `node:test` through `tsx` (which resolves the `@/` alias).
+
+Two tests guard things that drift silently rather than failing loudly, by
+reading source files:
+
+- `tests/export.test.ts` — every table in `SCHEMA` is either in `/api/export`
+  or in that test's named exclusion list. A table missed in the export still
+  downloads a file that *looks* complete, and you find out when you need it.
+- `tests/palette.test.ts` — every `NAV_ITEMS` entry has a command-palette
+  destination.
+
+Reading source is crude; it is also the only thing that fails when two
+hand-maintained lists in different files fall out of step.
 
 - `tests/fixtures/emails.ts` — realistic recruiting mail. Add a fixture here
   when you meet a template the rules get wrong; it is the regression suite for
