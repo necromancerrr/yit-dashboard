@@ -10,6 +10,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { EmptyState } from "@/components/EmptyState";
 import { parseISODate } from "@/lib/date";
 import { useWebAuthnSupport } from "@/lib/useWebAuthnSupport";
+import { passkeyErrorMessage } from "@/lib/passkey-errors";
 import type { Passkey } from "@/lib/types";
 
 export default function SecurityPage() {
@@ -45,8 +46,7 @@ export default function SecurityPage() {
 
       mutate();
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Registration failed";
-      setError(/abort|cancel|NotAllowed/i.test(message) ? null : message);
+      setError(passkeyErrorMessage(err, "register"));
     } finally {
       setAdding(false);
     }

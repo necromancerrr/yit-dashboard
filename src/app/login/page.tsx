@@ -7,6 +7,7 @@ import { Lock, Fingerprint } from "lucide-react";
 import { Logo } from "@/components/Logo";
 import { getBrandName } from "@/lib/identity";
 import { useWebAuthnSupport } from "@/lib/useWebAuthnSupport";
+import { passkeyErrorMessage } from "@/lib/passkey-errors";
 
 // `next` comes straight from the query string, so only ever follow it when it
 // is a path on this site — "//evil.com" and absolute URLs are not.
@@ -48,9 +49,7 @@ function LoginForm() {
       router.replace(safeNext(params.get("next")));
       router.refresh();
     } catch (err) {
-      // Cancelling the system prompt throws too — that's not an error worth shouting about.
-      const message = err instanceof Error ? err.message : "Passkey sign-in failed";
-      setError(/abort|cancel|NotAllowed/i.test(message) ? null : message);
+      setError(passkeyErrorMessage(err, "login"));
       setPasskeyLoading(false);
     }
   }
