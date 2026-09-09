@@ -34,6 +34,27 @@ export function getAIProvider(): AIProvider | null {
   }
 }
 
+/**
+ * The provider to use for an operation that needs eyes.
+ *
+ * `AI_PROVIDER` picks one provider for everything, which is the right default —
+ * but vision is the one capability a provider can simply lack. Rather than
+ * forcing a choice between "cheap text" and "screenshot import works", this
+ * falls back to a vision-capable provider for image work only, and leaves every
+ * text feature on the configured one.
+ *
+ * `AI_PROVIDER=none` still means none: an explicit opt-out is never overridden.
+ */
+export function getVisionProvider(): AIProvider | null {
+  if ((process.env.AI_PROVIDER ?? "deepseek").toLowerCase() === "none") return null;
+
+  const configured = getAIProvider();
+  if (configured?.supportsVision) return configured;
+
+  // Anthropic is currently the only provider with vision on by default.
+  return process.env.ANTHROPIC_API_KEY ? new AnthropicProvider() : null;
+}
+
 /** Whether any AI feature can run right now. Cheap enough to call per request. */
 export function isAIConfigured(): boolean {
   return getAIProvider() !== null;

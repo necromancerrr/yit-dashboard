@@ -2,10 +2,11 @@
 
 # yit-dashboard
 
-A single-user personal progress dashboard: gym logs, LeetCode practice,
-interview pipeline, school deadlines, money, and a daily checklist, plus a
-GitHub-style activity heatmap on the overview page. Full-stack Next.js with a
-real SQLite/libSQL database — every row the UI shows is persisted and editable.
+A single-user system that maintains a model of your life: a Career pipeline fed
+by email, a derived Inbox, Today's ranked attention list, Health and Growth
+tracking, School deadlines, and Money (cash flow plus live-priced crypto).
+Full-stack Next.js with a real SQLite/libSQL database — every row the UI shows
+is persisted and editable, and every AI feature is optional.
 
 Read `README.md` for setup and deployment prose; this file is the map of *how
 the code is organized and what conventions to follow when changing it*.
@@ -32,12 +33,14 @@ npm run dev                  # next dev (Turbopack) on :3000
 npm run build                # next build
 npm run start                # serve the production build
 npm run lint                 # eslint (flat config, eslint-config-next)
+npm run typecheck            # tsc --noEmit
+npm test                     # node:test via tsx (tests/*.test.ts)
 node scripts/hash-password.mjs "pw"   # prints a bcrypt APP_PASSWORD_HASH
 ```
 
-There is **no test suite and no typecheck script**. Before considering a change
-done, run `npm run lint` and `npm run build` (the build is what surfaces type
-errors).
+Before considering a change done, run `npm run lint`, `npm run typecheck`, and
+`npm test` (see **Tests** at the bottom). `npm run build` is the final check —
+it exercises the route bundling that typecheck alone does not.
 
 The database file (`db/local.db`) and its tables are created lazily on the
 first request — there is no migrate step to run.
@@ -52,8 +55,11 @@ src/
     icon.tsx apple-icon.tsx icon-192/ icon-512/ manifest.ts   # generated PWA assets
     (app)/                # authenticated group: sidebar + ToastProvider
       layout.tsx
-      page.tsx            # overview — stat cards + heatmap, reads /api/summary
-      gym/ leetcode/ interviews/ school/ finance/ checklist/   # one page.tsx each
+      page.tsx            # Today — ranked attention list, reads /api/today
+      career/               # application pipeline + career/[id] timeline
+      inbox/                # derived review queue (confirm / dismiss)
+      money/                # page.tsx + TransactionsPanel + CryptoPanel
+      health/ growth/ school/ checklist/
       security/             # manage passkeys (WebAuthn devices)
     api/
       auth/login  auth/logout
@@ -134,8 +140,11 @@ dev hot-reloads don't open new connections. The whole schema lives in the
 EXISTS` statements, split on `;` and executed once by `ensureDb()` (memoized on
 `globalThis.__dashboardDbReady`).
 
-Eight tables: `gym_logs`, `leetcode_logs`, `interviews`, `school_tasks`,
-`finance_transactions`, `checklist_items`, `checklist_completions`, `passkeys`.
+Fifteen tables. The originals — `gym_logs`, `leetcode_logs`, `interviews`,
+`school_tasks`, `finance_transactions`, `checklist_items`,
+`checklist_completions`, `passkeys` — plus `crypto_holdings` and the Yit OS
+set: `applications`, `application_events`, `inbox_items`, `external_events`,
+`integrations`, `schema_migrations`.
 `snake_case` columns; dates are `TEXT` ISO `YYYY-MM-DD`; booleans are
 `INTEGER` 0/1.
 
@@ -245,10 +254,11 @@ metadata, `Nav`, the login page, and the generated icons. Keep it that way.
 | `APP_PASSWORD_HASH` | one of these | bcrypt hash (preferred) |
 | `APP_PASSWORD` | one of these | plaintext password (local only) |
 | `NEXT_PUBLIC_DISPLAY_NAME` | no | name in UI, defaults to "You" — **inlined at build time**, so Docker passes it as a build arg |
-| `ANTHROPIC_API_KEY` | no | enables `/api/import/screenshot` (Claude vision); feature reports unconfigured without it |
+| `ANTHROPIC_API_KEY` | no | Anthropic provider; the only one with vision on by default |
 | `DEEPSEEK_API_KEY` | no | enables AI-backed text features through the default DeepSeek provider |
 | `AI_PROVIDER` | no | text AI provider: defaults to `deepseek`; use `none` to disable or `anthropic` for the legacy provider |
 | `AI_MODEL` | no | text AI model override; DeepSeek defaults to `deepseek-v4-flash` |
+| `DEEPSEEK_VISION_MODEL` | no | opt-in vision model for DeepSeek; without it screenshot import is off for that provider |
 | `APP_TIMEZONE` | no | IANA zone the day rolls over in (streaks, "today", checklist reset). Not `TZ` — reserved on Vercel |
 | `DATABASE_URL` | no | libSQL/Turso URL; defaults to local file |
 | `DATABASE_AUTH_TOKEN` | no | Turso token |
@@ -276,9 +286,13 @@ update `.env.example` when adding a variable.
 3. Copy `src/app/api/gym/` to `src/app/api/<name>/`, adjust table + Zod schemas.
 4. Add the table to `/api/export` (and `/api/summary` if it belongs on the
    overview).
-5. Copy a page from `src/app/(app)/gym/page.tsx` into `(app)/<name>/page.tsx`.
+5. Copy a page from `src/app/(app)/school/page.tsx` into `(app)/<name>/page.tsx`.
 6. Add the nav entry to `NAV_ITEMS` in `src/components/Nav.tsx` and a
    `--cat-<name>` color token in `globals.css`.
+
+Not every feature deserves a nav entry. Crypto is a panel inside Money
+(`money/CryptoPanel.tsx`), because it is a *facet* of money rather than a peer
+of it. Prefer a panel in an existing section over a new top-level entry.
 
 
 ## Yit OS concepts
@@ -339,6 +353,20 @@ Two rules for anything added here:
   model only phrases facts that route already computed, so it cannot invent a
   deadline you do not have.
 
+`getVisionProvider()` is the entry point for image work. `AI_PROVIDER` picks one
+provider for everything, but vision is the one capability a provider can simply
+lack — so image operations fall back to a vision-capable provider while every
+text feature stays on the configured (cheaper) one. `AI_PROVIDER=none` is still
+honoured absolutely; an explicit opt-out is never overridden.
+
+`AIProvider` declares `supportsVision` alongside its operations.
+`extractFromScreenshot()` powers `/api/import/screenshot`; DeepSeek's chat
+models are text-only, so that provider reports `supportsVision: false` unless
+`DEEPSEEK_VISION_MODEL` names a vision-capable model. The flag is declared
+rather than discovered so the route can say *why* import is unavailable — "no
+provider", "provider can't see", and "unreadable screenshot" have three
+different fixes and must not collapse into one error.
+
 ### Migrations: additive, and backfills run once
 
 `SCHEMA` re-executes on every boot, so everything in it must stay idempotent.
@@ -383,6 +411,36 @@ Privacy is a fetch-time property, not a storage-time one: Gmail is queried with
 `format=metadata`, so bodies never arrive in the first place. Snippets are
 clamped by `truncateSnippet()`. `integrations` stores no tokens — credentials
 live in the environment, because `/api/export` dumps tables to a file.
+
+## Everyday ingestion (beyond Career)
+
+Ingestion originally asked one question — *"what does this say about a job
+application?"* — and discarded everything else. Most of what actually arrives
+each day is a receipt or a course deadline, and both already have a table.
+
+`src/lib/ingest/domains.ts` runs **after** the career classifier declines, and
+routes a message to a `LifeDomain` (`school` | `money`) with a domain-shaped
+payload. It follows the same contracts as the career path:
+
+- **Rules first, model second.** `classifyDomain()` returns `null` to mean
+  "needs judgement" rather than guessing. Career keeps its own path untouched.
+- **Propose before create.** Nothing is written to `school_tasks` or
+  `finance_transactions` by the sync. The proposal lands in the Inbox and
+  *confirming* it creates the row, in `api/inbox/[id]/route.ts`.
+- **Dedupe by situation.** Keys are `school:<course>:<title>:<due>` and
+  `money:<merchant>:<amount>:<date>` — the same receipt re-derives to the same
+  key and updates in place, so a resent email never stacks a second copy.
+- **Never compute a date.** `extractDate()` reads only dates written in the
+  text; "due Friday" and "in two weeks" deliberately return `null`. A wrong
+  deadline is worse than none, because you plan around it without questioning.
+- **No amount, no transaction.** A money proposal without a number is dropped
+  rather than guessed.
+
+`inbox_items` carries `domain` + `proposed_payload` (JSON) rather than a column
+per domain. The payload is re-validated with Zod on confirm — it originated in
+an email, and the schema is what stands between a malformed proposal and your
+ledger. Both columns are added via `ensureColumn()`, not `SCHEMA`: an
+`ALTER TABLE` inside `SCHEMA` would throw on the second boot.
 
 ## Tests
 

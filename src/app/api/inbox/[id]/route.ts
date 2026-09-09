@@ -30,6 +30,70 @@ async function matchExistingApplication(
   return match.ambiguous ? null : match.applicationId;
 }
 
+/**
+ * Turn a confirmed non-career proposal into a real row.
+ *
+ * The payload is re-validated here rather than trusted: it was written by the
+ * ingest pipeline, but it originated in an email, and the schema is the only
+ * thing standing between a malformed proposal and your ledger.
+ */
+const SchoolPayload = z.object({
+  course: z.string().min(1),
+  title: z.string().min(1),
+  dueDate: z.string().nullable(),
+});
+
+const MoneyPayload = z.object({
+  date: z.string().min(1),
+  type: z.enum(["income", "expense"]),
+  category: z.string().min(1),
+  amount: z.number().positive(),
+  note: z.string().nullable(),
+});
+
+async function createFromDomainProposal(item: Record<string, unknown>): Promise<boolean> {
+  const domain = item.domain as string | null;
+  const raw = item.proposed_payload as string | null;
+  if (!domain || !raw) return false;
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return false;
+  }
+
+  if (domain === "school") {
+    const payload = SchoolPayload.safeParse(parsed);
+    if (!payload.success) return false;
+    await db.execute({
+      sql: `INSERT INTO school_tasks (course, title, due_date, status)
+            VALUES (?, ?, ?, 'Pending')`,
+      args: [payload.data.course, payload.data.title, payload.data.dueDate],
+    });
+    return true;
+  }
+
+  if (domain === "money") {
+    const payload = MoneyPayload.safeParse(parsed);
+    if (!payload.success) return false;
+    await db.execute({
+      sql: `INSERT INTO finance_transactions (date, type, category, amount, note)
+            VALUES (?, ?, ?, ?, ?)`,
+      args: [
+        payload.data.date,
+        payload.data.type,
+        payload.data.category,
+        payload.data.amount,
+        payload.data.note,
+      ],
+    });
+    return true;
+  }
+
+  return false;
+}
+
 async function createApplicationFromInboxItem(item: Record<string, unknown>): Promise<number | null> {
   const status = item.proposed_status as ApplicationStatus | null;
   const company = item.proposed_company as string | null;
@@ -150,6 +214,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
             args: [applicationId, id],
           });
         }
+      }
+
+      // Non-career domains: confirming is what creates the row, exactly as it
+      // is for Career. Ingestion never writes to these tables on its own.
+      if (body.state === "confirmed" && item.domain) {
+        await createFromDomainProposal(item);
       }
 
       await db.execute({

@@ -3,12 +3,35 @@ import {
   CareerEvent,
   type AIProvider,
   type BriefingFact,
+  ScreenshotCrypto,
+  ScreenshotTransactions,
   type CareerEmailInput,
+  type ScreenshotImage,
+  type ScreenshotKind,
 } from "@/lib/ai/types";
 import type { z } from "zod";
 
 const API_URL = "https://api.deepseek.com/chat/completions";
 const MODEL = process.env.AI_MODEL ?? "deepseek-v4-flash";
+
+/**
+ * DeepSeek's chat models are text-only, so screenshot import is off for this
+ * provider unless you name a vision-capable model yourself. Opt in with
+ * DEEPSEEK_VISION_MODEL rather than having the app guess and fail per request:
+ * a text model does not politely decline an image, it either errors or answers
+ * from the prompt alone — which would invent holdings it never saw.
+ */
+const VISION_MODEL = process.env.DEEPSEEK_VISION_MODEL?.trim() || null;
+
+const SCREENSHOT_SYSTEM = `You read screenshots of financial apps and turn them into structured data.
+
+Rules:
+- Transcribe only what is visibly present. Never invent, complete, or estimate a value that is not shown.
+- Ignore aggregate rows: portfolio totals, "today" summaries, and headline balances are not holdings.
+- Percentages next to an amount are usually a 24h change, not a quantity. Do not confuse them.
+- If a number is cut off, obscured, or you are unsure, omit that row and say so in notes.
+- It is far better to return fewer rows than to return a wrong number.
+- Respond in valid JSON only.`;
 
 const CLASSIFY_SYSTEM = `You classify recruiting emails for a personal job-application tracker.
 
@@ -67,6 +90,7 @@ interface DeepSeekResponse {
  */
 export class DeepSeekProvider implements AIProvider {
   readonly name = "deepseek";
+  readonly supportsVision = VISION_MODEL !== null;
 
   private describe(input: CareerEmailInput): string {
     return [
@@ -169,6 +193,59 @@ export class DeepSeekProvider implements AIProvider {
       );
     } catch (err) {
       console.warn("summarizeToday failed:", err);
+      return null;
+    }
+  }
+
+  async extractFromScreenshot(
+    image: ScreenshotImage,
+    kind: ScreenshotKind,
+    today: string
+  ): Promise<ScreenshotCrypto | ScreenshotTransactions | null> {
+    if (!VISION_MODEL) return null;
+
+    const schema = kind === "crypto" ? ScreenshotCrypto : ScreenshotTransactions;
+    try {
+      const response = await fetch(API_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${process.env.DEEPSEEK_API_KEY}`,
+        },
+        body: JSON.stringify({
+          model: VISION_MODEL,
+          messages: [
+            { role: "system", content: SCREENSHOT_SYSTEM },
+            {
+              role: "user",
+              content: [
+                {
+                  type: "image_url",
+                  image_url: { url: `data:${image.mediaType};base64,${image.base64}` },
+                },
+                { type: "text", text: kind === "crypto"
+                    ? `Extract every individual crypto holding from this screenshot. Today's date is ${today}.`
+                    : `Extract every individual transaction from this screenshot. Today's date is ${today}. Use it for any row with no visible date.` },
+              ],
+            },
+          ],
+          max_tokens: 8000,
+          response_format: { type: "json_object" },
+          stream: false,
+        }),
+      });
+
+      if (!response.ok) throw new Error(`DeepSeek API returned ${response.status}`);
+
+      const json = (await response.json()) as DeepSeekResponse;
+      const raw = json.choices?.[0]?.message?.content;
+      if (!raw) return null;
+
+      // JSON mode is a request, not a guarantee, so the schema is the contract.
+      const parsed = schema.safeParse(JSON.parse(raw));
+      return parsed.success ? parsed.data : null;
+    } catch (err) {
+      console.warn("extractFromScreenshot failed:", err);
       return null;
     }
   }

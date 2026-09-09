@@ -5,7 +5,11 @@ import {
   CareerEvent,
   type AIProvider,
   type BriefingFact,
+  ScreenshotCrypto,
+  ScreenshotTransactions,
   type CareerEmailInput,
+  type ScreenshotImage,
+  type ScreenshotKind,
 } from "@/lib/ai/types";
 
 const MODEL = process.env.AI_MODEL ?? "claude-opus-5";
@@ -41,8 +45,24 @@ You are given a list of facts already computed from the user's own data.
  * error, unparseable output — degrades to null rather than throwing, because
  * no caller of this interface is allowed to depend on it succeeding.
  */
+const SCREENSHOT_SYSTEM = `You read screenshots of financial apps and turn them into structured data.
+
+Rules:
+- Transcribe only what is visibly present. Never invent, complete, or estimate a value that is not shown.
+- Ignore aggregate rows: portfolio totals, "today" summaries, and headline balances are not holdings.
+- Percentages next to an amount are usually a 24h change, not a quantity. Do not confuse them.
+- If a number is cut off, obscured, or you are unsure, omit that row and say so in notes.
+- It is far better to return fewer rows than to return a wrong number.`;
+
+function screenshotPrompt(kind: ScreenshotKind, today: string): string {
+  return kind === "crypto"
+    ? `Extract every individual crypto holding from this screenshot. Today's date is ${today}.`
+    : `Extract every individual transaction from this screenshot. Today's date is ${today}. Use it for any row with no visible date.`;
+}
+
 export class AnthropicProvider implements AIProvider {
   readonly name = "anthropic";
+  readonly supportsVision = true;
   private client: Anthropic;
 
   constructor() {
@@ -109,6 +129,43 @@ export class AnthropicProvider implements AIProvider {
       return block && block.type === "text" ? block.text.trim() : null;
     } catch (err) {
       console.warn("summarizeToday failed:", err);
+      return null;
+    }
+  }
+
+  async extractFromScreenshot(
+    image: ScreenshotImage,
+    kind: ScreenshotKind,
+    today: string
+  ): Promise<ScreenshotCrypto | ScreenshotTransactions | null> {
+    try {
+      const response = await this.client.messages.parse({
+        model: MODEL,
+        max_tokens: 8000,
+        system: SCREENSHOT_SYSTEM,
+        output_config: {
+          format: zodOutputFormat(kind === "crypto" ? ScreenshotCrypto : ScreenshotTransactions),
+        },
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "image",
+                source: {
+                  type: "base64",
+                  media_type: image.mediaType as "image/png" | "image/jpeg" | "image/webp" | "image/gif",
+                  data: image.base64,
+                },
+              },
+              { type: "text", text: screenshotPrompt(kind, today) },
+            ],
+          },
+        ],
+      });
+      return response.parsed_output ?? null;
+    } catch (err) {
+      console.warn("extractFromScreenshot failed:", err);
       return null;
     }
   }

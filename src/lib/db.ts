@@ -392,6 +392,12 @@ async function ensureInboxProposalColumns(): Promise<void> {
   await ensureColumn("inbox_items", "proposed_company", "TEXT");
   await ensureColumn("inbox_items", "proposed_role", "TEXT");
   await ensureColumn("inbox_items", "proposed_next_action_date", "TEXT");
+  // Inbox items began career-only, so the columns above are career-shaped.
+  // Rather than a new column per domain forever, a domain tag plus a JSON
+  // payload carries whatever that domain's own reader produced. Career keeps
+  // its original columns, so nothing downstream of it changes.
+  await ensureColumn("inbox_items", "domain", "TEXT");
+  await ensureColumn("inbox_items", "proposed_payload", "TEXT");
 }
 
 const APPLICATION_STATUSES: ApplicationStatus[] = [
