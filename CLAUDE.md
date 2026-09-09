@@ -251,6 +251,30 @@ countable row, so a long habit list cannot bury the week's deadlines; the tick
 is optimistic and reverts on failure, because a habit you believe is done and
 is not is worse than one you know is outstanding.
 
+**Overdue work is separated from upcoming, and says so.** `relativeDay()` used
+to collapse everything in the past into `"today"`, so an assignment three weeks
+late read as "Assignment 4 due today" on the home screen — the one fact you most
+need, stated backwards, so you keep deprioritising it precisely because the app
+says it is fine. It now returns `"yesterday"` / `"N days ago"`, and Today colours
+those rows with `--critical` (derived from the route's `date` and the row's
+`dueDate`, not a new field).
+
+The bigger defect was volume: `due_date <= horizon ORDER BY due_date ASC LIMIT
+10` handed the whole list to the **ten oldest** things never marked done, so
+fifteen abandoned tasks from last term meant tomorrow's exam never appeared at
+all. Overdue and upcoming are now separate queries. `OVERDUE_LISTED` (3) of the
+**most recently missed** are listed — something missed on Friday is still
+actionable, something from last term is a decision about whether it matters —
+and the remainder are counted into one rollup row, so nothing is hidden and
+nothing buries the week.
+
+The Inbox has the mirror-image rule: its deadline window opens at
+`-OVERDUE_GRACE_DAYS` (14) rather than at today, because a deadline used to
+vanish from it the morning after it was missed. It closes at 14 days for the
+opposite reason — past that it is not a deadline any more, and an Inbox that
+nags indefinitely is one you stop reading, which costs you every other item in
+it.
+
 `/api/summary` is the one aggregate route: it fans out parallel queries via
 `Promise.all`, merges gym/LeetCode/checklist-completion dates into one heatmap
 count per day, and computes the gym streak backwards from today (tolerating a

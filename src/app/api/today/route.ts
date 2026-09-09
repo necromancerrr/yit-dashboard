@@ -42,6 +42,21 @@ const HABITS_LISTED = 3;
  */
 const MAX_ITEMS = 10;
 
+/**
+ * How many overdue things are listed individually before they collapse.
+ *
+ * Overdue items rank above everything — they have a negative urgency — which
+ * meant the old `ORDER BY due_date ASC LIMIT 10` handed the entire list to the
+ * *ten oldest* things you never marked done. Fifteen abandoned tasks from last
+ * term and tomorrow's exam never appeared at all.
+ *
+ * The most recently missed are listed, not the most ancient: something you
+ * missed on Friday is still actionable, and something from last term is a
+ * decision about whether it matters at all. The rest are counted, so nothing
+ * is hidden — just not allowed to bury the week.
+ */
+const OVERDUE_LISTED = 3;
+
 /** Urgency is "days until due", nudged so same-day items outrank equal ties. */
 function urgencyFor(days: number, weight: number): number {
   return days * 10 + weight;
@@ -60,21 +75,63 @@ export async function GET(req: NextRequest) {
       await rolloverRecurringChecklist(today);
       await refreshDerivedInbox(today);
 
-      const [school, career, checklist, inboxCount, gymDates, income, expense, holdings] =
+      const [
+        school,
+        career,
+        schoolOverdue,
+        schoolOverdueCount,
+        careerOverdue,
+        careerOverdueCount,
+        checklist,
+        inboxCount,
+        gymDates,
+        income,
+        expense,
+        holdings,
+      ] =
         await Promise.all([
           db.execute({
             sql: `SELECT id, course, title, due_date FROM school_tasks
-                  WHERE status != 'Done' AND due_date IS NOT NULL AND due_date <= ?
+                  WHERE status != 'Done' AND due_date IS NOT NULL
+                    AND due_date >= ? AND due_date <= ?
                   ORDER BY due_date ASC LIMIT 10`,
-            args: [horizon],
+            args: [today, horizon],
           }),
           db.execute({
             sql: `SELECT id, company, role, status, next_action_date, next_action_label
                   FROM applications
-                  WHERE next_action_date IS NOT NULL AND next_action_date <= ?
+                  WHERE next_action_date IS NOT NULL
+                    AND next_action_date >= ? AND next_action_date <= ?
                     AND status NOT IN ('Rejected', 'Withdrawn')
                   ORDER BY next_action_date ASC LIMIT 10`,
-            args: [horizon],
+            args: [today, horizon],
+          }),
+          // Most recently missed first, and counted in full so the rollup can
+          // say how many there really are.
+          db.execute({
+            sql: `SELECT id, course, title, due_date FROM school_tasks
+                  WHERE status != 'Done' AND due_date IS NOT NULL AND due_date < ?
+                  ORDER BY due_date DESC LIMIT ?`,
+            args: [today, OVERDUE_LISTED],
+          }),
+          db.execute({
+            sql: `SELECT COUNT(*) AS c FROM school_tasks
+                  WHERE status != 'Done' AND due_date IS NOT NULL AND due_date < ?`,
+            args: [today],
+          }),
+          db.execute({
+            sql: `SELECT id, company, role, status, next_action_date, next_action_label
+                  FROM applications
+                  WHERE next_action_date IS NOT NULL AND next_action_date < ?
+                    AND status NOT IN ('Rejected', 'Withdrawn')
+                  ORDER BY next_action_date DESC LIMIT ?`,
+            args: [today, OVERDUE_LISTED],
+          }),
+          db.execute({
+            sql: `SELECT COUNT(*) AS c FROM applications
+                  WHERE next_action_date IS NOT NULL AND next_action_date < ?
+                    AND status NOT IN ('Rejected', 'Withdrawn')`,
+            args: [today],
           }),
           // The rows themselves rather than a count: each unfinished habit is
           // listed and ticked in place, and the totals are derived from these.
@@ -98,6 +155,59 @@ export async function GET(req: NextRequest) {
         ]);
 
       const items: TodayItem[] = [];
+
+      // Overdue first, listed most-recently-missed first. Their urgency is
+      // already negative (days until due is in the past), so they rank above
+      // everything without any special casing here.
+      for (const row of schoolOverdue.rows) {
+        const due = row.due_date as string;
+        const days = daysBetween(today, due);
+        items.push({
+          id: `school-${row.id}`,
+          kind: "school",
+          title: `${row.title as string} was due ${relativeDay(days)}`,
+          detail: row.course as string,
+          urgency: urgencyFor(days, 0),
+          dueDate: due,
+          href: "/school",
+        });
+      }
+
+      for (const row of careerOverdue.rows) {
+        const due = row.next_action_date as string;
+        const days = daysBetween(today, due);
+        const label = (row.next_action_label as string | null) ?? (row.status as string);
+        items.push({
+          id: `career-${row.id}`,
+          kind: "career",
+          title: `${row.company as string} ${label} was ${relativeDay(days)}`,
+          detail: (row.role as string | null) ?? null,
+          urgency: urgencyFor(days, 1),
+          dueDate: due,
+          href: `/career/${row.id}`,
+        });
+      }
+
+      // Nothing is hidden, only kept from burying the week. The count is the
+      // real total, not the number that happened to be fetched.
+      const hiddenOverdue =
+        Number(schoolOverdueCount.rows[0]?.c ?? 0) -
+        schoolOverdue.rows.length +
+        Number(careerOverdueCount.rows[0]?.c ?? 0) -
+        careerOverdue.rows.length;
+
+      if (hiddenOverdue > 0) {
+        items.push({
+          id: "overdue-rollup",
+          kind: "school",
+          title: `${hiddenOverdue} more thing${hiddenOverdue === 1 ? "" : "s"} already overdue`,
+          detail: "Older than the ones above",
+          // Just behind the listed overdue items, still ahead of today's work.
+          urgency: urgencyFor(-1, 9),
+          dueDate: null,
+          href: "/school",
+        });
+      }
 
       for (const row of school.rows) {
         const due = row.due_date as string;
