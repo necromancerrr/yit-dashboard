@@ -2,6 +2,7 @@ import { Nav } from "@/components/Nav";
 import { ToastProvider } from "@/components/ToastProvider";
 import { LockGuard } from "@/components/LockGuard";
 import { OfflineBanner } from "@/components/OfflineBanner";
+import { CommandPalette } from "@/components/CommandPalette";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -19,6 +20,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               {children}
             </div>
           </main>
+          {/* Outside <main> because it is not page content, and inside
+              LockGuard because it reads the lock before it opens. */}
+          <CommandPalette />
         </div>
       </LockGuard>
     </ToastProvider>

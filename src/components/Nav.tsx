@@ -82,7 +82,18 @@ export function Nav() {
                 }}
               >
                 <Icon size={16} color={active ? "var(--accent)" : "var(--ink-muted)"} />
-                {item.label}
+                <span className="flex-1">{item.label}</span>
+                {/* A shortcut nobody knows about is a shortcut nobody uses, and
+                    the palette's whole point is that you reach it without
+                    coming here first. */}
+                {item.href === "/search" && (
+                  <kbd
+                    className="text-[10px] px-1.5 py-0.5 rounded border"
+                    style={{ borderColor: "var(--border)", color: "var(--ink-muted)" }}
+                  >
+                    ⌘K
+                  </kbd>
+                )}
               </Link>
             );
           })}
