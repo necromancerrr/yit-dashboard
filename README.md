@@ -6,6 +6,25 @@ activity heatmap. Full-stack Next.js app with a real database, so every
 checkmark, log, and dollar you add is saved and interactive (not a static
 mockup).
 
+## What's in it
+
+- **Today** — one ranked list of what actually needs attention, pulled from
+  every section.
+- **Career** — an application pipeline built on an append-only event log, so
+  the timeline can always explain the status on the card.
+- **Inbox** — a review queue derived from your own data, plus anything email
+  ingestion proposed. Nothing is written until you confirm it.
+- **Money** — cash flow, **recurring charges** worked out from your own
+  transactions, and live-priced crypto holdings.
+- **School, Health, Growth, Checklist** — deadlines, gym and LeetCode logs, and
+  daily habits that roll over on your calendar day.
+- **Search** — one box over everything you have written down.
+- **Setup** — what is configured and what it costs you when it isn't.
+- Passkeys (Face ID / Touch ID), auto-lock, offline support, an installable
+  PWA, and a share target for screenshots.
+
+Every AI feature is optional; the app works with no keys set at all.
+
 ## Stack
 
 - **Next.js 16** (App Router, TypeScript, Turbopack)
@@ -231,8 +250,9 @@ src/
   app/
     login/                # sign-in page
     (app)/                # everything behind auth, shares the sidebar/nav
-      page.tsx            # overview: stat cards + activity heatmap
-      gym/ leetcode/ interviews/ school/ finance/ checklist/
+      page.tsx            # Today: ranked attention list
+      career/ inbox/ money/ school/ health/ growth/ checklist/
+      search/ security/ setup/
     api/                  # REST-ish route handlers, one folder per resource
   components/              # Nav, Heatmap, StatCard, Modal, etc.
   lib/
@@ -246,12 +266,20 @@ scripts/hash-password.mjs  # generate APP_PASSWORD_HASH
 
 ## Extending it
 
-Everything lives in eight SQLite tables (`gym_logs`, `leetcode_logs`,
-`interviews`, `school_tasks`, `finance_transactions`, `checklist_items`,
-`checklist_completions` — the per-day log behind the heatmap — and `passkeys`
-for biometric sign-in). See `src/lib/db.ts` for the schema. Add a column or
-table there, add a route in `src/app/api/`, and a page/component to surface
-it; the pattern is the same across every section.
+Everything lives in sixteen SQLite tables — the originals (`gym_logs`,
+`leetcode_logs`, `interviews`, `school_tasks`, `finance_transactions`,
+`checklist_items`, `checklist_completions` — the per-day log behind the
+heatmap — plus `passkeys`, `shared_images` and `crypto_holdings`) and the
+Career/ingestion set (`applications`, `application_events`, `inbox_items`,
+`external_events`, `integrations`, `schema_migrations`). See `src/lib/db.ts`
+for the schema. Add a column or table there, add a route in `src/app/api/`,
+and a page/component to surface it; the pattern is the same across every
+section.
+
+Some things are *derived* rather than stored — the Inbox, Today's ranking, and
+recurring charges are all recomputed from rows you already have. Prefer that
+over a new table whenever the answer can be worked out from what is there:
+there is nothing to keep in sync and nothing to go stale.
 
 Note that the SQL is written in SQLite's dialect (`AUTOINCREMENT`,
 `datetime('now')`, `INSERT OR IGNORE`, `?` placeholders). That is what makes

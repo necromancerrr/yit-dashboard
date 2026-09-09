@@ -59,7 +59,7 @@ src/
       page.tsx            # Today — ranked attention list, reads /api/today
       career/               # application pipeline + career/[id] timeline
       inbox/                # derived review queue (confirm / dismiss)
-      money/                # page.tsx + TransactionsPanel + CryptoPanel
+      money/                # page.tsx + TransactionsPanel + RecurringPanel + CryptoPanel
       health/ growth/ school/ checklist/
       security/             # manage passkeys (WebAuthn devices)
       setup/                # what is configured, and what it costs when it is not
@@ -67,6 +67,7 @@ src/
       auth/login  auth/logout
       auth/passkey/         # WebAuthn: login/ + register/ ceremonies, list, delete
       gym/ leetcode/ interviews/ school/ finance/ checklist/   # route.ts + [id]/route.ts
+      finance/recurring/route.ts # derived subscriptions (read-only)
       applications/       # route.ts + [id]/route.ts + [id]/events/route.ts
       inbox/              # route.ts + [id]/route.ts (confirm / dismiss)
       today/route.ts      # ranked attention list for the Today page
@@ -164,10 +165,10 @@ dev hot-reloads don't open new connections. The whole schema lives in the
 EXISTS` statements, split on `;` and executed once by `ensureDb()` (memoized on
 `globalThis.__dashboardDbReady`).
 
-Fifteen tables. The originals — `gym_logs`, `leetcode_logs`, `interviews`,
+Sixteen tables. The originals — `gym_logs`, `leetcode_logs`, `interviews`,
 `school_tasks`, `finance_transactions`, `checklist_items`,
-`checklist_completions`, `passkeys` — plus `crypto_holdings` and the Yit OS
-set: `applications`, `application_events`, `inbox_items`, `external_events`,
+`checklist_completions`, `passkeys` — plus `shared_images`, `crypto_holdings`
+and the Yit OS set: `applications`, `application_events`, `inbox_items`, `external_events`,
 `integrations`, `schema_migrations`.
 `snake_case` columns; dates are `TEXT` ISO `YYYY-MM-DD`; booleans are
 `INTEGER` 0/1.
@@ -319,9 +320,18 @@ update `.env.example` when adding a variable.
 6. Add the nav entry to `NAV_ITEMS` in `src/components/Nav.tsx` and a
    `--cat-<name>` color token in `globals.css`.
 
-Not every feature deserves a nav entry. Crypto is a panel inside Money
-(`money/CryptoPanel.tsx`), because it is a *facet* of money rather than a peer
-of it. Prefer a panel in an existing section over a new top-level entry.
+Not every feature deserves a nav entry. Crypto and recurring charges are panels
+inside Money (`money/CryptoPanel.tsx`, `money/RecurringPanel.tsx`), because each
+is a *facet* of money rather than a peer of it. Prefer a panel in an existing
+section over a new top-level entry.
+
+### Derived panels are read-only
+
+`RecurringPanel` has no add button, and that is deliberate rather than
+unfinished. Every row is computed from `finance_transactions`, so a panel that
+also accepted edits would have two sources of truth and would quietly stop
+being true the first time you forgot to maintain the hand-entered half. If a
+panel derives its rows, it renders them and nothing else.
 
 
 ## Yit OS concepts
@@ -488,6 +498,37 @@ proposed as money. The preview is derived during render — there is no effect
 mirroring the parse into state — and confirming POSTs to the ordinary
 `/api/school` and `/api/finance` routes. No new insert path, and no model call:
 this is deterministic parsing, which is the point.
+## Recurring charges
+
+`src/lib/recurring.ts` finds subscriptions in transactions you already logged.
+Nothing is fetched from a bank and nothing new is stored — `GET
+/api/finance/recurring` reads two years of rows, calls `detectRecurring()`, and
+returns the findings. It is a scan over a few hundred rows.
+
+`detectRecurring(transactions, today)` is pure: no database, no clock. `today`
+is a parameter precisely so the behaviour can be pinned in tests
+(`tests/recurring.test.ts`), and every rule in it exists to *reject* something:
+
+- **Three occurrences minimum.** Two points fit any line.
+- **Consistent gaps** (within 25% of the median) — weekly groceries have gaps
+  of 3, 9, 5; a subscription has 30, 31, 30.
+- **Consistent amounts** (within 20%) — prices rise and usage-based bills
+  drift, but a category swinging 20 → 140 is not a commitment.
+- **Nothing more often than every five days.** That is a habit, not a bill.
+- **Income is excluded.** A salary would otherwise be the single most confident
+  "recurring charge" in the list.
+- **Silence for two cadences means cancelled.** A list that still bills you for
+  something you quit last year is one you stop reading.
+
+The bias is deliberate and one-directional: a miss costs nothing, a false
+positive costs the owner's trust in the whole list, and an untrusted list is
+the same as no list. Loosen a threshold only with a fixture that proves the
+looser rule still rejects groceries.
+
+The headline figure is annual cost, not the per-charge amount — `$11.99` is
+nothing and `$141 a year` is a decision — and the list sorts by it, so the most
+expensive commitment is the first thing read.
+
 ## Offline (PWA)
 
 `public/sw.js` is a hand-written service worker — no Workbox, no next-pwa. It
