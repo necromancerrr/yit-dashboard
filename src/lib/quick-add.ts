@@ -106,7 +106,12 @@ export function parseQuickAdd(input: string, today: string): QuickAddResult | nu
   if (!text) return null;
 
   const amount = extractAmount(text);
-  const date = extractDate(text, today);
+  // A typed line can become either a deadline or a purchase, and a bare
+  // month/day means opposite things in each: "due March 14" points forward,
+  // "spent $40 March 14" points back. Read it both ways and let the branch
+  // that wins pick the one that matches what it is.
+  const futureDate = extractDate(text, today, "future");
+  const pastDate = extractDate(text, today, "past");
   const code = COURSE_CODE.exec(text);
   const course = code ? `${code[1]} ${code[2]}` : null;
   const label = labelOf(text, code ? code[0] : null);
@@ -120,12 +125,12 @@ export function parseQuickAdd(input: string, today: string): QuickAddResult | nu
       course: course ?? "Course",
       title: capitalize(label) || "Task",
       // Null when the line says "due Friday". Deliberate: see the note above.
-      dueDate: date,
+      dueDate: futureDate,
     };
     return {
       domain: "school",
-      reason: date
-        ? `School task for ${school.course}, due ${date}`
+      reason: futureDate
+        ? `School task for ${school.course}, due ${futureDate}`
         : `School task for ${school.course} — no date written, so none is set`,
       school,
     };
@@ -136,7 +141,7 @@ export function parseQuickAdd(input: string, today: string): QuickAddResult | nu
     const money: MoneyProposal = {
       // Unlike a deadline, a transaction always happened on some day, and the
       // day you typed it is the honest default when the line names none.
-      date: date ?? today,
+      date: pastDate ?? today,
       type: INCOME_PHRASES.test(text) ? "income" : "expense",
       category: capitalize(label) || "Uncategorized",
       amount,

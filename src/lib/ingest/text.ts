@@ -40,13 +40,33 @@ const MONTH_FIRST = /\b([A-Za-z]{3,9})\.?\s+(\d{1,2})(?:st|nd|rd|th)?(?:,?\s+(\d
 const DAY_FIRST = /\b(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]{3,9})\.?(?:,?\s+(\d{4}))?\b/g;
 
 /**
+ * Which way a bare month/day should be read when the year is not written.
+ *
+ * "March 14" with no year is ambiguous, and the right guess depends entirely on
+ * what the line is about. A deadline points forward: seeing "January 5" in
+ * December means the coming January. A receipt points backward: a charge dated
+ * "March 14" read in September happened this March, not in eighteen months.
+ *
+ * Getting this wrong is quiet and expensive — a receipt filed a year ahead
+ * vanishes from every month you would look at it in.
+ */
+export type DateDirection = "future" | "past";
+
+/**
  * Pull an explicit date out of text.
  *
  * Only formats actually written in the message are accepted. "Due Friday" and
  * "in two weeks" are deliberately unreadable here: a wrong deadline is worse
  * than no deadline, because you will plan around it and never question it.
+ *
+ * `direction` decides how a year-less date is resolved; it defaults to
+ * "future" so every existing caller keeps its behaviour.
  */
-export function extractDate(text: string, receivedOn: string): string | null {
+export function extractDate(
+  text: string,
+  receivedOn: string,
+  direction: DateDirection = "future"
+): string | null {
   const isoMatch = /\b(\d{4})-(\d{2})-(\d{2})\b/.exec(text);
   if (isoMatch) return `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`;
 
@@ -64,10 +84,18 @@ export function extractDate(text: string, receivedOn: string): string | null {
     if (!month || day < 1 || day > 31) continue;
     const year = named[3] ? Number(named[3]) : receivedYear;
     const candidate = `${year}-${pad(month)}-${pad(day)}`;
-    // A "January 5" that arrives in December means next January, not one
-    // eleven months gone. Only roll forward, and only by a whole year.
-    if (!named[3] && candidate < shiftISODate(receivedOn, -30)) {
-      return `${year + 1}-${pad(month)}-${pad(day)}`;
+    if (!named[3]) {
+      // A deadline reading "January 5" in December means the coming January,
+      // not one eleven months gone.
+      if (direction === "future" && candidate < shiftISODate(receivedOn, -30)) {
+        return `${year + 1}-${pad(month)}-${pad(day)}`;
+      }
+      // A receipt cannot have happened yet: a charge dated after today is a
+      // year-boundary artefact ("December 28" read on January 3), not a
+      // prediction.
+      if (direction === "past" && candidate > receivedOn) {
+        return `${year - 1}-${pad(month)}-${pad(day)}`;
+      }
     }
     return candidate;
   }
@@ -80,7 +108,16 @@ export function extractDate(text: string, receivedOn: string): string | null {
     if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
       const rawYear = slash[3] ? Number(slash[3]) : receivedYear;
       const year = rawYear < 100 ? 2000 + rawYear : rawYear;
-      return `${year}-${pad(month)}-${pad(day)}`;
+      const candidate = `${year}-${pad(month)}-${pad(day)}`;
+      if (!slash[3]) {
+        if (direction === "future" && candidate < shiftISODate(receivedOn, -30)) {
+          return `${year + 1}-${pad(month)}-${pad(day)}`;
+        }
+        if (direction === "past" && candidate > receivedOn) {
+          return `${year - 1}-${pad(month)}-${pad(day)}`;
+        }
+      }
+      return candidate;
     }
   }
 

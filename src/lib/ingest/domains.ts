@@ -112,7 +112,9 @@ export function classifyDomain(message: NormalizedMessage): DomainSignal | null 
         confidence: fromReceiptSender ? 0.88 : 0.72,
         reason: fromReceiptSender ? "Receipt from a billing sender" : "Message states a charged amount",
         money: {
-          date: extractDate(text, message.receivedOn) ?? message.receivedOn,
+          // "past": a receipt records a charge that already happened, so a
+          // bare "March 14" read in September is this March, not next.
+          date: extractDate(text, message.receivedOn, "past") ?? message.receivedOn,
           type: INCOME_PHRASES.test(text) ? "income" : "expense",
           category: merchantFrom(message),
           amount,
