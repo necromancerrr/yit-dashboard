@@ -12,6 +12,7 @@ import {
   Sprout,
   CheckSquare,
   Fingerprint,
+  SlidersHorizontal,
   LogOut,
   Download,
 } from "lucide-react";
@@ -31,6 +32,7 @@ const NAV_ITEMS = [
   { href: "/growth", label: "Growth", icon: Sprout },
   { href: "/checklist", label: "Checklist", icon: CheckSquare },
   { href: "/security", label: "Security", icon: Fingerprint },
+  { href: "/setup", label: "Setup", icon: SlidersHorizontal },
 ];
 
 // The bottom bar can't hold nine items legibly on a phone. These are the ones
