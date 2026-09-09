@@ -1,14 +1,22 @@
 # Inbox autonomy — a design for not pressing yes and no
 
-> **Status: design only — nothing here is implemented.**
-> It is blocked on the owner's answers in the closing section, most of all
-> how often the digest would actually be read. Autonomy with unread
-> oversight is just unaudited automation, so an honest "rarely" changes
-> what should ship.
-
-
-**Status:** design only. Nothing in this document is implemented. No schema, route,
-or pipeline change accompanies it.
+> **Status: Stages 0, 1, 2 and 4 are implemented. Stage 3 is not.**
+>
+> Shipped: `automation_actions` and the journal, `GET/POST /api/digest`,
+> `POST /api/digest/[id]/undo` with the fingerprint check, the Today line and
+> the Inbox "Done for you" panel, provenance columns and the "email" marker,
+> `src/lib/autonomy/policy.ts` with the whole tier table, money and school
+> auto-apply, the run budget and the duplicate-charge check — all behind
+> `AUTOMATION_MODE`, which defaults to `assist` (exactly today's behaviour).
+>
+> **Not shipped: the trust ledger (Stage 3).** `automation_rules`, promotion
+> at three confirms, decay on read and the per-sender `never` toggle are
+> designed below and not built. Until they exist, autonomy is a fixed policy
+> rather than one that grows, which is the safer half.
+>
+> The open questions in §9 are still open. The constants they would change
+> (`AUTO_APPLY_MAX_AMOUNT = 100`, `AUTO_APPLY_MAX_PER_RUN = 10`) are named in
+> `policy.ts` and are one edit each.
 
 **The ask, verbatim:** *"create a system design-ish for the inbox sync feature, and i
 dont want to press yes and no for everything, automate it and actually make a central

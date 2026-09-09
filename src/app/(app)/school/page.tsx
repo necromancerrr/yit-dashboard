@@ -7,6 +7,7 @@ import { fetcher, apiPost, apiPatch } from "@/lib/fetcher";
 import { useUndoableDelete } from "@/lib/useUndoableDelete";
 import { PageHeader } from "@/components/PageHeader";
 import { EmptyState } from "@/components/EmptyState";
+import { FromEmail } from "@/components/FromEmail";
 import { Modal } from "@/components/Modal";
 import { parseISODate, todayISO } from "@/lib/date";
 import type { SchoolTask } from "@/lib/types";
@@ -127,7 +128,10 @@ export default function SchoolPage() {
                       <GraduationCap size={15} color="var(--cat-school)" />
                     </div>
                     <div className="min-w-0">
-                      <p className="text-sm font-medium truncate">{task.title}</p>
+                      <p className="text-sm font-medium truncate flex items-center gap-1.5">
+                        <span className="truncate">{task.title}</span>
+                        <FromEmail source={task.source} />
+                      </p>
                       <p className="text-xs flex items-center gap-1.5" style={{ color: overdue ? "var(--critical)" : "var(--ink-muted)" }}>
                         {task.course} · {fmt(task.due_date)} {overdue ? "· overdue" : ""}
                       </p>

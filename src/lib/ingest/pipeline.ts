@@ -1,10 +1,18 @@
 import { db } from "@/lib/db";
 import { applyEvent } from "@/lib/career";
 import { getAIProvider } from "@/lib/ai";
-import { classifyDeterministic, AUTO_APPLY_MIN_CONFIDENCE } from "@/lib/ingest/classify";
+import { classifyDeterministic } from "@/lib/ingest/classify";
 import { matchApplication, type MatchCandidate } from "@/lib/ingest/match";
 import { classifyDomain, type DomainSignal } from "@/lib/ingest/domains";
 import { companyFromDomain, senderDomain, truncateSnippet } from "@/lib/ingest/normalize";
+import {
+  decideCareerTier,
+  decideDomainTier,
+  parseMode,
+  tierActs,
+  type RunContext,
+} from "@/lib/autonomy/policy";
+import { record, newRunId } from "@/lib/autonomy/journal";
 import type { CareerSignal, IngestOutcome, NormalizedMessage } from "@/lib/ingest/types";
 import type { ApplicationStatus } from "@/lib/types";
 
@@ -30,6 +38,39 @@ interface ProcessResult {
   detail: string;
   /** Set for non-career outcomes, so counters can tell them apart. */
   domain?: "school" | "money";
+}
+
+/**
+ * One sync's autonomy state: which mode it is running in, and how much it has
+ * already done. Threaded through rather than read from the environment at each
+ * decision, so the budget is a real running total and the policy stays pure.
+ */
+interface Run extends RunContext {
+  runId: string;
+}
+
+function startRun(): Run {
+  return { runId: newRunId(), mode: parseMode(process.env.AUTOMATION_MODE), actionsSoFar: 0 };
+}
+
+/**
+ * Is this charge already in the ledger under another sender?
+ *
+ * The same purchase mailed by both the merchant and the card issuer produces
+ * two different dedupe keys, so nothing else in the pipeline would catch it.
+ * Matching on amount within a couple of days is loose on purpose: a false
+ * "possible duplicate" only costs a confirmation, while a double-counted charge
+ * silently makes the month wrong.
+ */
+async function looksLikeDuplicateCharge(amount: number, date: string): Promise<boolean> {
+  const found = await db.execute({
+    sql: `SELECT 1 FROM finance_transactions
+           WHERE type = 'expense' AND ABS(amount - ?) < 0.005
+             AND date BETWEEN date(?, '-2 days') AND date(?, '+2 days')
+           LIMIT 1`,
+    args: [amount, date, date],
+  });
+  return found.rows.length > 0;
 }
 
 function displayCompany(signalCompany: string | null, message: NormalizedMessage): string | null {
@@ -150,8 +191,70 @@ async function raiseInboxItem(params: {
 async function proposeLifeItem(
   message: NormalizedMessage,
   externalEventId: number,
-  life: DomainSignal
+  life: DomainSignal,
+  run: Run
 ): Promise<ProcessResult> {
+  // Everything the classifier produced here is deterministic — classifyDomain
+  // has no model path — so the only question left is whether policy allows it
+  // to be written without asking.
+  const possibleDuplicate =
+    life.domain === "money" && life.money
+      ? await looksLikeDuplicateCharge(life.money.amount, life.money.date)
+      : false;
+  const decision = decideDomainTier(life, run, { possibleDuplicate });
+
+  if (tierActs(decision.tier) && life.domain === "money" && life.money) {
+    const { date, type, category, amount, note } = life.money;
+    const inserted = await db.execute({
+      sql: `INSERT INTO finance_transactions (date, type, category, amount, note, source, external_event_id)
+            VALUES (?, ?, ?, ?, ?, 'gmail', ?) RETURNING id`,
+      args: [date, type, category, amount, note ?? null, externalEventId],
+    });
+    const id = Number(inserted.rows[0].id);
+    run.actionsSoFar += 1;
+    await record({
+      runId: run.runId,
+      domain: "money",
+      tier: decision.tier,
+      action: "insert_transaction",
+      targetTable: "finance_transactions",
+      targetId: id,
+      externalEventId,
+      summary: `-$${amount.toFixed(2)} ${category}`,
+      because: `${life.reason} · ${decision.reason}`,
+      // Exactly the fields written, so an edit you make afterwards is
+      // detectable and undo never destroys it.
+      payload: { date, type, category, amount, note: note ?? null },
+      score: life.confidence,
+    });
+    return { outcome: "applied", detail: `Money: ${category}`, domain: "money" };
+  }
+
+  if (tierActs(decision.tier) && life.domain === "school" && life.school) {
+    const { course, title, dueDate } = life.school;
+    const inserted = await db.execute({
+      sql: `INSERT INTO school_tasks (course, title, due_date, status, source, external_event_id)
+            VALUES (?, ?, ?, 'Pending', 'gmail', ?) RETURNING id`,
+      args: [course, title, dueDate, externalEventId],
+    });
+    const id = Number(inserted.rows[0].id);
+    run.actionsSoFar += 1;
+    await record({
+      runId: run.runId,
+      domain: "school",
+      tier: decision.tier,
+      action: "insert_school_task",
+      targetTable: "school_tasks",
+      targetId: id,
+      externalEventId,
+      summary: `${course}: ${title}${dueDate ? ` — due ${dueDate}` : ""}`,
+      because: `${life.reason} · ${decision.reason}`,
+      payload: { course, title, due_date: dueDate, status: "Pending" },
+      score: life.confidence,
+    });
+    return { outcome: "applied", detail: `School: ${course}`, domain: "school" };
+  }
+
   if (life.domain === "school" && life.school) {
     const { course, title, dueDate } = life.school;
     await raiseInboxItem({
@@ -194,7 +297,8 @@ async function proposeLifeItem(
 
 async function processMessage(
   message: NormalizedMessage,
-  externalEventId: number
+  externalEventId: number,
+  run: Run
 ): Promise<ProcessResult> {
   const signal = await classify(message);
 
@@ -203,7 +307,7 @@ async function processMessage(
     // of what arrives every day is a receipt or a course deadline, and both
     // already have a table waiting for them.
     const life = classifyDomain(message);
-    if (life) return proposeLifeItem(message, externalEventId, life);
+    if (life) return proposeLifeItem(message, externalEventId, life, run);
     return { outcome: "ignored", detail: signal?.reasoning ?? "No career signal" };
   }
 
@@ -257,10 +361,24 @@ async function processMessage(
   }
 
   const combined = signal.confidence * match.confidence;
-  const trustworthy =
-    signal.method === "deterministic" && combined >= AUTO_APPLY_MIN_CONFIDENCE * 0.9;
+  // The same question every other domain asks, in the one place that answers
+  // it. This is the decision the pipeline used to make inline as `trustworthy`.
+  const decision = decideCareerTier(
+    {
+      method: signal.method,
+      combined,
+      ambiguous: match.ambiguous,
+      hasMatch: true,
+    },
+    run
+  );
 
-  if (trustworthy) {
+  if (tierActs(decision.tier)) {
+    const before = await db.execute({
+      sql: "SELECT status FROM applications WHERE id = ?",
+      args: [match.applicationId],
+    });
+    const fromStatus = (before.rows[0]?.status as string | null) ?? null;
     // applyEvent is the second line of defence, not the only one: it still
     // refuses a regression, a terminal reopen, or anything older than a
     // correction you made by hand.
@@ -276,6 +394,23 @@ async function processMessage(
     });
 
     if (applied.applied) {
+      run.actionsSoFar += 1;
+      // Career auto-applies already happened before any of this existed; they
+      // were simply invisible. Journaling them is the whole of "see what
+      // already happens" — no behaviour changed, the record did.
+      await record({
+        runId: run.runId,
+        domain: "career",
+        tier: decision.tier,
+        action: "career_status",
+        targetTable: "applications",
+        targetId: match.applicationId,
+        externalEventId,
+        summary: `${label} → ${signal.status}`,
+        because: `${signal.reasoning} · ${decision.reason}`,
+        payload: { fromStatus, toStatus: signal.status, occurredOn: message.receivedOn },
+        score: combined,
+      });
       if (signal.deadline) {
         await db.execute({
           sql: `UPDATE applications
@@ -342,6 +477,8 @@ export async function ingestMessages(
     ignored: 0,
   };
 
+  const run = startRun();
+
   for (const message of messages) {
     const inserted = await db.execute({
       sql: `INSERT INTO external_events
@@ -371,7 +508,7 @@ export async function ingestMessages(
 
     let result: ProcessResult;
     try {
-      result = await processMessage(message, externalEventId);
+      result = await processMessage(message, externalEventId, run);
     } catch (err) {
       console.error("Ingest failed for", message.providerMessageId, err);
       await db.execute({

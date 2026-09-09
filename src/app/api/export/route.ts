@@ -33,6 +33,7 @@ export async function GET() {
         externalEvents,
         inbox,
         integrations,
+        automation,
       ] = await Promise.all([
         db.execute("SELECT * FROM gym_logs ORDER BY date"),
         db.execute("SELECT * FROM leetcode_logs ORDER BY date"),
@@ -51,6 +52,9 @@ export async function GET() {
         db.execute(
           "SELECT id, provider, status, account_label, last_synced_at, created_at FROM integrations ORDER BY id"
         ),
+        // The audit trail for everything the sync did on its own. An autonomy
+        // feature whose record is missing from the backup is not auditable.
+        db.execute("SELECT * FROM automation_actions ORDER BY id"),
       ]);
 
       const payload = {
@@ -68,6 +72,7 @@ export async function GET() {
         external_events: externalEvents.rows,
         inbox_items: inbox.rows,
         integrations: integrations.rows,
+        automation_actions: automation.rows,
       };
 
       return new NextResponse(JSON.stringify(payload, null, 2), {

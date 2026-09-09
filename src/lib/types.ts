@@ -49,6 +49,9 @@ export interface SchoolTask {
   notes: string | null;
   created_at: string;
   updated_at: string;
+  /** See FinanceTransaction.source — null when you typed it. */
+  source?: string | null;
+  external_event_id?: number | null;
 }
 
 export interface FinanceTransaction {
@@ -58,6 +61,15 @@ export interface FinanceTransaction {
   category: string;
   amount: number;
   note: string | null;
+  /**
+   * Null when you typed it, 'gmail' when the sync created it.
+   *
+   * The UI renders a small "from email" marker off this, so a row the machine
+   * made is never mistaken for one you made. That marker is most of the trust
+   * the automation needs.
+   */
+  source?: string | null;
+  external_event_id?: number | null;
   created_at: string;
 }
 

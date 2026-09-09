@@ -19,6 +19,7 @@ import { parseISODate } from "@/lib/date";
 import type { TodayData, TodayItem } from "@/lib/types";
 import { QuickAdd } from "./QuickAdd";
 import { SetupNotice } from "@/components/SetupNotice";
+import { DigestLine } from "@/components/DigestLine";
 
 /**
  * Today — the primary Yit OS screen.
@@ -207,6 +208,10 @@ export default function TodayPage() {
           the moment you thought of it, and it belongs on the screen you are
           already looking at. */}
       <SetupNotice />
+      {/* One line, not a badge and not a modal. The whole point of autonomy is
+          to stop demanding attention, so this must be ignorable for a week
+          without anything degrading. */}
+      <DigestLine />
       <QuickAdd />
 
       {/* Attention */}

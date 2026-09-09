@@ -6,6 +6,7 @@ import { Wallet, Plus, Trash2, ArrowDownRight, ArrowUpRight, Pencil } from "luci
 import { fetcher, apiPost, apiPatch } from "@/lib/fetcher";
 import { useUndoableDelete } from "@/lib/useUndoableDelete";
 import { EmptyState } from "@/components/EmptyState";
+import { FromEmail } from "@/components/FromEmail";
 import { Modal } from "@/components/Modal";
 import { parseISODate, todayISO } from "@/lib/date";
 import {
@@ -322,8 +323,12 @@ export function TransactionsPanel() {
                     <p className="text-sm font-medium truncate">
                       {t.category} {t.note ? <span style={{ color: "var(--ink-muted)" }}>· {t.note}</span> : null}
                     </p>
-                    <p className="text-xs" style={{ color: "var(--ink-muted)" }}>
+                    <p
+                      className="text-xs flex items-center gap-1.5"
+                      style={{ color: "var(--ink-muted)" }}
+                    >
                       {fmt(t.date)}
+                      <FromEmail source={t.source} />
                     </p>
                   </div>
                 </button>
