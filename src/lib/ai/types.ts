@@ -118,4 +118,72 @@ export interface AIProvider {
     kind: ScreenshotKind,
     today: string
   ): Promise<ScreenshotCrypto | ScreenshotTransactions | null>;
+  /**
+   * Draft a recipe from a food video's metadata. The model cannot watch the
+   * video — it sees the thumbnail, title, author, and any screenshots the
+   * user attached. Returns null when no vision-capable provider is
+   * configured or the response fails its schema. The caller proposes the
+   * result for review and never writes it directly.
+   */
+  extractRecipe(input: RecipeSourceInput): Promise<RecipeProposal | null>;
+}
+
+/** A recipe drafted from a video link, awaiting the user's review. */
+export const RecipeProposal = z.object({
+  name: z.string().min(1).describe("Recipe name, from the post title when nothing better is visible"),
+  ingredients: z
+    .array(z.string().min(1))
+    .describe("One ingredient per line, with quantities only when actually visible or stated"),
+  steps: z.array(z.string().min(1)).describe("Ordered preparation steps, best effort"),
+  prep_min: z.number().int().nonnegative().nullable(),
+  cook_min: z.number().int().nonnegative().nullable(),
+  servings: z.number().int().positive().nullable(),
+  calories: z.number().int().nonnegative().nullable().describe("Per serving, only when stated — never estimated silently"),
+  protein_g: z.number().nonnegative().nullable().describe("Per serving, only when stated — never estimated silently"),
+  notes: z
+    .string()
+    .nullable()
+    .describe(
+      "What was guessed or could not be seen. Shown to the user, never hidden — an uncertain draft they fix beats a confident one they trust."
+    ),
+});
+export type RecipeProposal = z.infer<typeof RecipeProposal>;
+
+/** What the model gets to look at when drafting a recipe. */
+export interface RecipeSourceInput {
+  title: string | null;
+  author: string | null;
+  pageUrl: string;
+  platform: "instagram" | "tiktok" | "youtube";
+  /** Public thumbnail from oEmbed, if the platform gave one. */
+  thumbnailUrl: string | null;
+  /** Screenshots the user attached — the main accuracy lever. */
+  screenshots: ScreenshotImage[];
+}
+
+/**
+ * One prompt for every provider, defined once so the two implementations
+ * cannot drift into different standards of honesty.
+ */
+export const RECIPE_SYSTEM = `You draft recipes from food video metadata. You CANNOT watch the video — you see the thumbnail image, the post title, the author, and optionally screenshots the user attached.
+
+Rules:
+- Draft a best-effort recipe from what is visible or stated. The user reviews everything before saving.
+- Only include ingredients and steps you can reasonably infer from the images, title, or screenshots.
+- Never invent precise quantities. When unsure, write "to taste", "approx.", or a range.
+- Never estimate calories or protein — leave them null unless stated.
+- If the images show nothing usable, return the name from the title with empty ingredients/steps and explain the gap in notes.
+- notes must name anything you guessed or could not see. An uncertain draft the user fixes beats a confident one they trust.`;
+
+export function recipePrompt(input: RecipeSourceInput): string {
+  return [
+    `Platform: ${input.platform}`,
+    `Post URL: ${input.pageUrl}`,
+    `Title: ${input.title ?? "(none)"}`,
+    `Author: ${input.author ?? "(unknown)"}`,
+    input.screenshots.length > 0
+      ? `${input.screenshots.length} screenshot(s) attached — trust these over the thumbnail.`
+      : "No screenshots attached — work from the thumbnail and title only.",
+    "Draft the recipe.",
+  ].join("\n");
 }

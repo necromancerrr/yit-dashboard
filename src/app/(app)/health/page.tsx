@@ -8,6 +8,9 @@ import { useUndoableDelete } from "@/lib/useUndoableDelete";
 import { PageHeader } from "@/components/PageHeader";
 import { EmptyState } from "@/components/EmptyState";
 import { Modal } from "@/components/Modal";
+import { Fab } from "@/components/Fab";
+import { SwipeableRow } from "@/components/SwipeableRow";
+import { MealPrepPanel } from "./MealPrepPanel";
 import { parseISODate, todayISO } from "@/lib/date";
 import type { GymLog } from "@/lib/types";
 
@@ -100,45 +103,60 @@ export default function HealthPage() {
         ) : (
           <ul className="divide-y" style={{ borderColor: "var(--border)" }}>
             {items.map((log) => (
-              <li key={log.id} className="flex items-center justify-between gap-3 px-4 py-3 group">
-                <button
-                  onClick={() => openEdit(log)}
-                  className="flex items-center gap-3 min-w-0 text-left flex-1"
-                  aria-label={`Edit ${log.workout_type} on ${fmt(log.date)}`}
+              <li key={log.id}>
+                <SwipeableRow
+                  actions={[
+                    {
+                      icon: <Pencil size={16} />,
+                      label: `Edit ${log.workout_type}`,
+                      onClick: () => openEdit(log),
+                    },
+                    {
+                      icon: <Trash2 size={16} />,
+                      label: `Delete ${log.workout_type}`,
+                      onClick: () => requestDelete(log),
+                      danger: true,
+                    },
+                  ]}
                 >
-                  <div
-                    className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
-                    style={{ background: "color-mix(in srgb, var(--cat-gym) 16%, transparent)" }}
-                  >
-                    <Dumbbell size={15} color="var(--cat-gym)" />
+                  <div className="flex items-center justify-between gap-3 px-4 py-3">
+                    <button
+                      onClick={() => openEdit(log)}
+                      className="flex items-center gap-3 min-w-0 text-left flex-1"
+                      aria-label={`Edit ${log.workout_type} on ${fmt(log.date)}`}
+                    >
+                      <div
+                        className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
+                        style={{ background: "color-mix(in srgb, var(--cat-gym) 16%, transparent)" }}
+                      >
+                        <Dumbbell size={15} color="var(--cat-gym)" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium truncate">{log.workout_type}</p>
+                        <p className="text-xs flex items-center gap-1.5" style={{ color: "var(--ink-muted)" }}>
+                          {fmt(log.date)}
+                          {log.duration_min ? (
+                            <>
+                              <span>·</span>
+                              <Clock size={11} /> {log.duration_min}min
+                            </>
+                          ) : null}
+                          {log.notes ? <span className="truncate">· {log.notes}</span> : null}
+                        </p>
+                      </div>
+                    </button>
                   </div>
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium truncate">{log.workout_type}</p>
-                    <p className="text-xs flex items-center gap-1.5" style={{ color: "var(--ink-muted)" }}>
-                      {fmt(log.date)}
-                      {log.duration_min ? (
-                        <>
-                          <span>·</span>
-                          <Clock size={11} /> {log.duration_min}min
-                        </>
-                      ) : null}
-                      {log.notes ? <span className="truncate">· {log.notes}</span> : null}
-                    </p>
-                  </div>
-                </button>
-                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity shrink-0">
-                  <button onClick={() => openEdit(log)} className="icon-btn" aria-label={`Edit ${log.workout_type}`}>
-                    <Pencil size={14} />
-                  </button>
-                  <button onClick={() => requestDelete(log)} className="icon-btn" aria-label={`Delete ${log.workout_type}`}>
-                    <Trash2 size={14} />
-                  </button>
-                </div>
+                </SwipeableRow>
               </li>
             ))}
           </ul>
         )}
       </div>
+
+      <MealPrepPanel />
+
+      {/* The phone's thumb-reachable add: desktop keeps the header button. */}
+      <Fab onClick={openAdd} label="Log workout" />
 
       <Modal open={open} onClose={() => setOpen(false)} title={editing ? "Edit workout" : "Log a workout"}>
         <form onSubmit={handleSubmit} className="flex flex-col gap-3">

@@ -3,9 +3,13 @@ import {
   CareerEvent,
   type AIProvider,
   type BriefingFact,
+  RecipeProposal,
+  RECIPE_SYSTEM,
+  recipePrompt,
   ScreenshotCrypto,
   ScreenshotTransactions,
   type CareerEmailInput,
+  type RecipeSourceInput,
   type ScreenshotImage,
   type ScreenshotKind,
 } from "@/lib/ai/types";
@@ -246,6 +250,52 @@ export class DeepSeekProvider implements AIProvider {
       return parsed.success ? parsed.data : null;
     } catch (err) {
       console.warn("extractFromScreenshot failed:", err);
+      return null;
+    }
+  }
+
+  async extractRecipe(input: RecipeSourceInput): Promise<RecipeProposal | null> {
+    if (!VISION_MODEL) return null;
+    const images = [
+      ...(input.thumbnailUrl ? [input.thumbnailUrl] : []),
+      ...input.screenshots.map((s) => `data:${s.mediaType};base64,${s.base64}`),
+    ];
+    // Nothing to look at — a text model must not guess a recipe from a URL.
+    if (images.length === 0) return null;
+    try {
+      const response = await fetch(API_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${process.env.DEEPSEEK_API_KEY}`,
+        },
+        body: JSON.stringify({
+          model: VISION_MODEL,
+          messages: [
+            { role: "system", content: RECIPE_SYSTEM },
+            {
+              role: "user",
+              content: [
+                ...images.map((url) => ({ type: "image_url", image_url: { url } })),
+                { type: "text", text: recipePrompt(input) },
+              ],
+            },
+          ],
+          max_tokens: 4000,
+          response_format: { type: "json_object" },
+          stream: false,
+        }),
+      });
+
+      if (!response.ok) throw new Error(`DeepSeek API returned ${response.status}`);
+
+      const json = (await response.json()) as DeepSeekResponse;
+      const raw = json.choices?.[0]?.message?.content;
+      if (!raw) return null;
+      const parsed = RecipeProposal.safeParse(JSON.parse(raw));
+      return parsed.success ? parsed.data : null;
+    } catch (err) {
+      console.warn("extractRecipe failed:", err);
       return null;
     }
   }

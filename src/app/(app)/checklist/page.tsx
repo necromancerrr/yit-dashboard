@@ -2,12 +2,15 @@
 
 import { useMemo, useState } from "react";
 import useSWR from "swr";
-import { CheckSquare, Plus, Trash2, Check, Repeat, Pencil } from "lucide-react";
+import { CheckSquare, Plus, Trash2, Check, Repeat, Pencil, Loader2, ArrowDown } from "lucide-react";
 import { fetcher, apiPost, apiPatch } from "@/lib/fetcher";
 import { useUndoableDelete } from "@/lib/useUndoableDelete";
+import { usePullToRefresh } from "@/lib/usePullToRefresh";
 import { PageHeader } from "@/components/PageHeader";
 import { EmptyState } from "@/components/EmptyState";
 import { Modal } from "@/components/Modal";
+import { SwipeableRow } from "@/components/SwipeableRow";
+import { Fab } from "@/components/Fab";
 import type { ChecklistItem } from "@/lib/types";
 
 function groupByCategory(items: ChecklistItem[]) {
@@ -76,8 +79,22 @@ export default function ChecklistPage() {
     }
   }
 
+  const { pull, refreshing } = usePullToRefresh(() => mutate());
+
   return (
     <div>
+      <div className="ptr-indicator" style={{ height: pull }} aria-hidden>
+        {pull > 8 && (
+          <div className="flex items-center gap-2 text-xs py-2">
+            {refreshing ? (
+              <Loader2 size={14} className="animate-spin" />
+            ) : (
+              <ArrowDown size={14} className="-rotate-180" />
+            )}
+            {refreshing ? "Refreshing…" : pull > 48 ? "Release to refresh" : "Pull to refresh"}
+          </div>
+        )}
+      </div>
       <PageHeader
         title="Checklist"
         subtitle="Daily habits and other necessities"
@@ -105,7 +122,23 @@ export default function ChecklistPage() {
               </div>
               <ul className="divide-y" style={{ borderColor: "var(--border)" }}>
                 {list.map((item) => (
-                  <li key={item.id} className="flex items-center justify-between gap-3 px-4 py-2.5 group">
+                  <li key={item.id}>
+                    <SwipeableRow
+                      actions={[
+                        {
+                          icon: <Pencil size={16} />,
+                          label: `Edit ${item.title}`,
+                          onClick: () => openEdit(item),
+                        },
+                        {
+                          icon: <Trash2 size={16} />,
+                          label: `Delete ${item.title}`,
+                          onClick: () => requestDelete(item),
+                          danger: true,
+                        },
+                      ]}
+                    >
+                      <div className="flex items-center justify-between gap-3 px-4 py-2.5">
                     <button
                       className="flex items-center gap-3 min-w-0 text-left flex-1"
                       onClick={() => toggle(item)}
@@ -132,14 +165,8 @@ export default function ChecklistPage() {
                         {item.recurring ? <Repeat size={11} style={{ color: "var(--ink-muted)" }} /> : null}
                       </span>
                     </button>
-                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity shrink-0">
-                      <button onClick={() => openEdit(item)} className="icon-btn" aria-label={`Edit ${item.title}`}>
-                        <Pencil size={14} />
-                      </button>
-                      <button onClick={() => requestDelete(item)} className="icon-btn" aria-label={`Delete ${item.title}`}>
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
+                      </div>
+                    </SwipeableRow>
                   </li>
                 ))}
               </ul>
@@ -189,6 +216,9 @@ export default function ChecklistPage() {
           </button>
         </form>
       </Modal>
+
+      {/* The phone's thumb-reachable add: desktop keeps the header button. */}
+      <Fab onClick={openAdd} label="Add a checklist item" />
     </div>
   );
 }

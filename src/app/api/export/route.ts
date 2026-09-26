@@ -21,6 +21,7 @@ export async function GET() {
     return withDb(async () => {
       const [
         gym,
+        meals,
         leetcode,
         interviews,
         school,
@@ -37,6 +38,7 @@ export async function GET() {
         rules,
       ] = await Promise.all([
         db.execute("SELECT * FROM gym_logs ORDER BY date"),
+        db.execute("SELECT * FROM meal_preps ORDER BY created_at"),
         db.execute("SELECT * FROM leetcode_logs ORDER BY date"),
         db.execute("SELECT * FROM interviews ORDER BY id"),
         db.execute("SELECT * FROM school_tasks ORDER BY id"),
@@ -65,6 +67,7 @@ export async function GET() {
       const payload = {
         exported_at: new Date().toISOString(),
         gym_logs: gym.rows,
+        meal_preps: meals.rows,
         leetcode_logs: leetcode.rows,
         interviews: interviews.rows,
         school_tasks: school.rows,

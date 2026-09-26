@@ -57,6 +57,32 @@ CREATE TABLE IF NOT EXISTS gym_logs (
 );
 CREATE INDEX IF NOT EXISTS idx_gym_logs_date ON gym_logs(date);
 
+-- Saved recipes: a meal sheet fed by pasted video links (Instagram / TikTok /
+-- YouTube) plus an AI-drafted recipe the user reviews before it is stored.
+-- ingredients and steps are JSON arrays of strings; the import pipeline fills
+-- source_* / cover_image_url from public oEmbed metadata where it exists.
+CREATE TABLE IF NOT EXISTS meal_preps (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  source_url TEXT,
+  platform TEXT,
+  source_author TEXT,
+  cover_image_url TEXT,
+  ingredients TEXT,
+  steps TEXT,
+  prep_min INTEGER,
+  cook_min INTEGER,
+  servings INTEGER,
+  calories INTEGER,
+  protein_g REAL,
+  tags TEXT,
+  notes TEXT,
+  times_cooked INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_meal_preps_created ON meal_preps(created_at);
+
 CREATE TABLE IF NOT EXISTS leetcode_logs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   date TEXT NOT NULL,

@@ -8,6 +8,8 @@ import { useUndoableDelete } from "@/lib/useUndoableDelete";
 import { PageHeader } from "@/components/PageHeader";
 import { EmptyState } from "@/components/EmptyState";
 import { Modal } from "@/components/Modal";
+import { SwipeableRow } from "@/components/SwipeableRow";
+import { Fab } from "@/components/Fab";
 import { parseISODate, todayISO } from "@/lib/date";
 import { Heatmap } from "@/components/Heatmap";
 import type { LeetcodeLog, SummaryData } from "@/lib/types";
@@ -150,7 +152,23 @@ export default function GrowthPage() {
         ) : (
           <ul className="divide-y" style={{ borderColor: "var(--border)" }}>
             {items.map((log) => (
-              <li key={log.id} className="flex items-center justify-between gap-3 px-4 py-3 group">
+              <li key={log.id}>
+                <SwipeableRow
+                  actions={[
+                    {
+                      icon: <Pencil size={16} />,
+                      label: `Edit ${log.problem_name}`,
+                      onClick: () => openEdit(log),
+                    },
+                    {
+                      icon: <Trash2 size={16} />,
+                      label: `Delete ${log.problem_name}`,
+                      onClick: () => requestDelete(log),
+                      danger: true,
+                    },
+                  ]}
+                >
+                <div className="flex items-center justify-between gap-3 px-4 py-3">
                 <button
                   onClick={() => openEdit(log)}
                   className="flex items-center gap-3 min-w-0 text-left flex-1"
@@ -178,14 +196,8 @@ export default function GrowthPage() {
                     </p>
                   </div>
                 </button>
-                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity shrink-0">
-                  <button onClick={() => openEdit(log)} className="icon-btn" aria-label={`Edit ${log.problem_name}`}>
-                    <Pencil size={14} />
-                  </button>
-                  <button onClick={() => requestDelete(log)} className="icon-btn" aria-label={`Delete ${log.problem_name}`}>
-                    <Trash2 size={14} />
-                  </button>
                 </div>
+                </SwipeableRow>
               </li>
             ))}
           </ul>
@@ -257,6 +269,9 @@ export default function GrowthPage() {
           </button>
         </form>
       </Modal>
+
+      {/* The phone's thumb-reachable add: desktop keeps the header button. */}
+      <Fab onClick={openAdd} label="Log a problem" />
     </div>
   );
 }

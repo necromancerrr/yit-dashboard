@@ -11,11 +11,13 @@ import {
   Inbox as InboxIcon,
   ArrowRight,
   Check,
+  Loader2,
 } from "lucide-react";
 import { fetcher, apiPatch } from "@/lib/fetcher";
 import { PageHeader } from "@/components/PageHeader";
 import { getDisplayName } from "@/lib/identity";
 import { parseISODate } from "@/lib/date";
+import { usePullToRefresh } from "@/lib/usePullToRefresh";
 import type { TodayData, TodayItem } from "@/lib/types";
 import { QuickAdd } from "./QuickAdd";
 import { SetupNotice } from "@/components/SetupNotice";
@@ -188,11 +190,26 @@ export default function TodayPage() {
   const { data, isLoading, mutate } = useSWR<TodayData>("/api/today", fetcher, {
     refreshInterval: 60_000,
   });
+  // The gesture every phone user tries on a stale list. Desktop is untouched
+  // — the hook only arms on devices without hover.
+  const { pull, refreshing } = usePullToRefresh(() => mutate());
 
   const items = data?.items ?? [];
 
   return (
     <div>
+      <div className="ptr-indicator" style={{ height: pull }} aria-hidden>
+        {pull > 8 && (
+          <div className="flex items-center gap-2 text-xs py-2">
+            {refreshing ? (
+              <Loader2 size={14} className="animate-spin" />
+            ) : (
+              <ArrowRight size={14} className="-rotate-90" />
+            )}
+            {refreshing ? "Refreshing…" : pull > 48 ? "Release to refresh" : "Pull to refresh"}
+          </div>
+        )}
+      </div>
       <PageHeader
         title={`${greeting()}, ${getDisplayName()}`}
         // The server's day, not the browser's. Every date on this page —

@@ -8,6 +8,8 @@ import { fetcher, apiPost, apiPatch } from "@/lib/fetcher";
 import { useUndoableDelete } from "@/lib/useUndoableDelete";
 import { EmptyState } from "@/components/EmptyState";
 import { Modal } from "@/components/Modal";
+import { SwipeableRow } from "@/components/SwipeableRow";
+import { Fab } from "@/components/Fab";
 import type { CryptoHoldingWithPrice } from "@/lib/types";
 
 interface Proposal {
@@ -275,7 +277,23 @@ export function CryptoPanel() {
         ) : (
           <ul className="divide-y" style={{ borderColor: "var(--border)" }}>
             {items.map((h) => (
-              <li key={h.id} className="flex items-center justify-between gap-3 px-4 py-3 group">
+              <li key={h.id}>
+                <SwipeableRow
+                  actions={[
+                    {
+                      icon: <Pencil size={16} />,
+                      label: `Edit ${h.symbol}`,
+                      onClick: () => openEdit(h),
+                    },
+                    {
+                      icon: <Trash2 size={16} />,
+                      label: `Delete ${h.symbol}`,
+                      onClick: () => requestDelete(h),
+                      danger: true,
+                    },
+                  ]}
+                >
+                <div className="flex items-center justify-between gap-3 px-4 py-3">
                 <button onClick={() => openEdit(h)} className="flex items-center gap-3 min-w-0 text-left flex-1" aria-label={`Edit ${h.symbol}`}>
                   <div
                     className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-[11px] font-semibold"
@@ -317,15 +335,9 @@ export function CryptoPanel() {
                       </>
                     )}
                   </div>
-                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
-                    <button onClick={() => openEdit(h)} className="icon-btn" aria-label={`Edit ${h.symbol}`}>
-                      <Pencil size={14} />
-                    </button>
-                    <button onClick={() => requestDelete(h)} className="icon-btn" aria-label={`Delete ${h.symbol}`}>
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
                 </div>
+                </div>
+                </SwipeableRow>
               </li>
             ))}
           </ul>
@@ -421,6 +433,9 @@ export function CryptoPanel() {
           </button>
         </form>
       </Modal>
+
+      {/* The phone's thumb-reachable add: desktop keeps the header button. */}
+      <Fab onClick={openAdd} label="Add a holding" />
     </div>
   );
 }

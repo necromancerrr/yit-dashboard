@@ -5,9 +5,13 @@ import {
   CareerEvent,
   type AIProvider,
   type BriefingFact,
+  RecipeProposal,
+  RECIPE_SYSTEM,
+  recipePrompt,
   ScreenshotCrypto,
   ScreenshotTransactions,
   type CareerEmailInput,
+  type RecipeSourceInput,
   type ScreenshotImage,
   type ScreenshotKind,
 } from "@/lib/ai/types";
@@ -166,6 +170,42 @@ export class AnthropicProvider implements AIProvider {
       return response.parsed_output ?? null;
     } catch (err) {
       console.warn("extractFromScreenshot failed:", err);
+      return null;
+    }
+  }
+
+  async extractRecipe(input: RecipeSourceInput): Promise<RecipeProposal | null> {
+    try {
+      const images = [
+        ...(input.thumbnailUrl
+          ? [{ type: "image" as const, source: { type: "url" as const, url: input.thumbnailUrl } }]
+          : []),
+        ...input.screenshots.map((s) => ({
+          type: "image" as const,
+          source: {
+            type: "base64" as const,
+            media_type: s.mediaType as "image/png" | "image/jpeg" | "image/webp" | "image/gif",
+            data: s.base64,
+          },
+        })),
+      ];
+      const response = await this.client.messages.parse({
+        model: MODEL,
+        max_tokens: 4000,
+        system: RECIPE_SYSTEM,
+        output_config: {
+          format: zodOutputFormat(RecipeProposal),
+        },
+        messages: [
+          {
+            role: "user",
+            content: [...images, { type: "text" as const, text: recipePrompt(input) }],
+          },
+        ],
+      });
+      return response.parsed_output ?? null;
+    } catch (err) {
+      console.warn("extractRecipe failed:", err);
       return null;
     }
   }

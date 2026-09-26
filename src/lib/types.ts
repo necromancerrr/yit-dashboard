@@ -7,6 +7,29 @@ export interface GymLog {
   created_at: string;
 }
 
+export interface MealPrep {
+  id: number;
+  name: string;
+  source_url: string | null;
+  platform: string | null;
+  source_author: string | null;
+  cover_image_url: string | null;
+  /** JSON array of ingredient lines. */
+  ingredients: string | null;
+  /** JSON array of step lines. */
+  steps: string | null;
+  prep_min: number | null;
+  cook_min: number | null;
+  servings: number | null;
+  calories: number | null;
+  protein_g: number | null;
+  tags: string | null;
+  notes: string | null;
+  times_cooked: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface LeetcodeLog {
   id: number;
   date: string;

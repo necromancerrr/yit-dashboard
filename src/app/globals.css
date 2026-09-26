@@ -216,6 +216,69 @@ body {
     background: var(--surface-raised);
     color: var(--ink-primary);
   }
+
+  /* Touch devices have no hover, so row actions hidden behind
+     `group-hover:opacity-100` would be unreachable there — and 28px targets
+     are too small for thumbs. Both are fixed here, in one place, instead of
+     in every list page. */
+  @media (hover: none) {
+    .group .group-hover\:opacity-100 {
+      opacity: 1;
+    }
+    .icon-btn {
+      width: 40px;
+      height: 40px;
+    }
+  }
+
+  /* Swipeable rows: actions sit behind the content and are revealed by a
+     leftward swipe on touch, or by hover / keyboard focus on desktop. */
+  .swipeable {
+    touch-action: pan-y;
+  }
+  .swipeable-actions {
+    opacity: 0;
+    transition: opacity 150ms ease;
+  }
+  @media (hover: hover) {
+    .swipeable:hover .swipeable-actions,
+    .swipeable:focus-within .swipeable-actions {
+      opacity: 1;
+    }
+  }
+
+  /* Floating action button: the phone's primary "add" affordance. Desktop
+     keeps its header buttons, so this only exists below the md breakpoint. */
+  .fab {
+    position: fixed;
+    right: 1rem;
+    bottom: 5.5rem;
+    z-index: 30;
+    width: 56px;
+    height: 56px;
+    border-radius: 999px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--accent);
+    color: #ffffff;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+    transition: transform 80ms ease, background-color 120ms ease;
+  }
+  .fab:active {
+    transform: scale(0.94);
+  }
+  .fab:hover {
+    background: var(--accent-strong);
+  }
+
+  /* Pull-to-refresh indicator on the Today page. */
+  .ptr-indicator {
+    display: flex;
+    justify-content: center;
+    overflow: hidden;
+    color: var(--ink-muted);
+  }
 }
 
 @keyframes fade-in {

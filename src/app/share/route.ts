@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withDb } from "@/lib/api-helpers";
+import { detectMealSource } from "@/lib/meal-source";
 
 // The OS share sheet posts here.
 //
@@ -9,9 +10,13 @@ import { withDb } from "@/lib/api-helpers";
 // in a share sheet. A page path gets redirected to the login screen instead,
 // so a locked-out share fails somewhere you can act.
 //
-// Nothing is extracted here. The image is parked, and the ordinary Scan review
-// flow picks it up — sharing a screenshot must not be a way to write rows
-// without seeing them first.
+// Two kinds of share arrive, and each goes to the flow that already knows how
+// to review it:
+// - an image → parked for Money's screenshot review flow;
+// - a link (Instagram / TikTok / YouTube) → Health's meal import flow.
+//
+// Nothing is extracted here in either case. Sharing must not be a way to
+// write rows without seeing them first.
 
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 const ALLOWED = ["image/png", "image/jpeg", "image/webp", "image/gif"];
@@ -29,9 +34,29 @@ function redirectTo(req: NextRequest, path: string): NextResponse {
   });
 }
 
+/** The first http(s) URL in the share fields, or null. */
+function firstUrl(...fields: (FormDataEntryValue | null)[]): string | null {
+  for (const field of fields) {
+    if (typeof field !== "string") continue;
+    const match = /https?:\/\/[^\s"'<>]+/i.exec(field);
+    if (match) return match[0];
+  }
+  return null;
+}
+
 export async function POST(req: NextRequest) {
   try {
     const form = await req.formData();
+
+    // A link share arrives as `url`, or folded into `text` — Instagram's
+    // share sheet sends both. A recipe-video link opens Health's meal import
+    // with the lookup already running; anything else falls through to the
+    // image flow below.
+    const sharedUrl = firstUrl(form.get("url"), form.get("text"));
+    if (sharedUrl && detectMealSource(sharedUrl)) {
+      return redirectTo(req, `/health?meal_url=${encodeURIComponent(sharedUrl)}`);
+    }
+
     const file = form.get("image");
 
     if (!(file instanceof File) || file.size === 0) {

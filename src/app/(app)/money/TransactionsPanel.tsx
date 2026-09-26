@@ -8,6 +8,8 @@ import { useUndoableDelete } from "@/lib/useUndoableDelete";
 import { EmptyState } from "@/components/EmptyState";
 import { FromEmail } from "@/components/FromEmail";
 import { Modal } from "@/components/Modal";
+import { SwipeableRow } from "@/components/SwipeableRow";
+import { Fab } from "@/components/Fab";
 import { parseISODate, todayISO } from "@/lib/date";
 import {
   PERIODS,
@@ -298,7 +300,23 @@ export function TransactionsPanel() {
         ) : (
           <ul className="divide-y" style={{ borderColor: "var(--border)" }}>
             {visible.map((t) => (
-              <li key={t.id} className="flex items-center justify-between gap-3 px-4 py-3 group">
+              <li key={t.id}>
+                <SwipeableRow
+                  actions={[
+                    {
+                      icon: <Pencil size={16} />,
+                      label: `Edit ${t.category} transaction`,
+                      onClick: () => openEdit(t),
+                    },
+                    {
+                      icon: <Trash2 size={16} />,
+                      label: `Delete ${t.category} transaction`,
+                      onClick: () => requestDelete(t),
+                      danger: true,
+                    },
+                  ]}
+                >
+                <div className="flex items-center justify-between gap-3 px-4 py-3">
                 <button
                   onClick={() => openEdit(t)}
                   className="flex items-center gap-3 min-w-0 text-left flex-1"
@@ -340,15 +358,9 @@ export function TransactionsPanel() {
                     {t.type === "income" ? "+" : "-"}
                     {currency(t.amount)}
                   </span>
-                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
-                    <button onClick={() => openEdit(t)} className="icon-btn" aria-label={`Edit ${t.category} transaction`}>
-                      <Pencil size={14} />
-                    </button>
-                    <button onClick={() => requestDelete(t)} className="icon-btn" aria-label={`Delete ${t.category} transaction`}>
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
                 </div>
+                </div>
+                </SwipeableRow>
               </li>
             ))}
           </ul>
@@ -422,6 +434,9 @@ export function TransactionsPanel() {
           </button>
         </form>
       </Modal>
+
+      {/* The phone's thumb-reachable add: desktop keeps the header button. */}
+      <Fab onClick={openAdd} label="Add a transaction" />
     </div>
   );
 }

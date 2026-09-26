@@ -9,6 +9,8 @@ import { useUndoableDelete } from "@/lib/useUndoableDelete";
 import { PageHeader } from "@/components/PageHeader";
 import { EmptyState } from "@/components/EmptyState";
 import { Modal } from "@/components/Modal";
+import { SwipeableRow } from "@/components/SwipeableRow";
+import { Fab } from "@/components/Fab";
 import { parseISODate, todayISO } from "@/lib/date";
 import { ALL_STATUSES, STATUS_COLOR, isTerminal } from "@/lib/career-status";
 import type { Application, ApplicationStatus } from "@/lib/types";
@@ -77,7 +79,18 @@ export default function CareerPage() {
   function renderRow(app: Application) {
     const next = fmt(app.next_action_date);
     return (
-      <li key={app.id} className="flex items-center justify-between gap-3 px-4 py-3 group">
+      <li key={app.id}>
+        <SwipeableRow
+          actions={[
+            {
+              icon: <Trash2 size={16} />,
+              label: `Delete ${app.company}`,
+              onClick: () => requestDelete(app),
+              danger: true,
+            },
+          ]}
+        >
+        <div className="flex items-center justify-between gap-3 px-4 py-3">
         <Link href={`/career/${app.id}`} className="flex items-center gap-3 min-w-0 flex-1">
           <div
             className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
@@ -99,18 +112,11 @@ export default function CareerPage() {
             </p>
           </div>
         </Link>
-        <div className="flex items-center gap-2 shrink-0">
-          <span className="badge" style={{ color: STATUS_COLOR[app.status] }}>
-            {app.status}
-          </span>
-          <button
-            onClick={() => requestDelete(app)}
-            className="icon-btn opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity"
-            aria-label={`Delete ${app.company}`}
-          >
-            <Trash2 size={14} />
-          </button>
+        <span className="badge shrink-0" style={{ color: STATUS_COLOR[app.status] }}>
+          {app.status}
+        </span>
         </div>
+        </SwipeableRow>
       </li>
     );
   }
@@ -249,6 +255,9 @@ export default function CareerPage() {
           </button>
         </form>
       </Modal>
+
+      {/* The phone's thumb-reachable add: desktop keeps the header button. */}
+      <Fab onClick={() => setOpen(true)} label="Add an application" />
     </div>
   );
 }
