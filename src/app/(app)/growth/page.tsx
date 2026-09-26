@@ -12,6 +12,7 @@ import { SwipeableRow } from "@/components/SwipeableRow";
 import { Fab } from "@/components/Fab";
 import { parseISODate, todayISO } from "@/lib/date";
 import { Heatmap } from "@/components/Heatmap";
+import { ProvenanceBadge } from "@/components/ProvenanceBadge";
 import type { LeetcodeLog, SummaryData } from "@/lib/types";
 
 const DIFFICULTIES = ["Easy", "Medium", "Hard"] as const;
@@ -178,6 +179,7 @@ export default function GrowthPage() {
                   <div className="min-w-0">
                     <p className="text-sm font-medium truncate flex items-center gap-1.5">
                       {log.problem_name}
+                      <ProvenanceBadge source={log.source} />
                       {log.url && (
                         <a
                           href={log.url}

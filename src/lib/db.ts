@@ -411,6 +411,19 @@ CREATE TABLE IF NOT EXISTS automation_rules (
   UNIQUE(domain, scope, scope_key)
 );
 CREATE INDEX IF NOT EXISTS idx_automation_rules_lookup ON automation_rules(domain, scope_key);
+
+-- Machine credentials for the agent API (/api/agent/*). The raw key is shown
+-- exactly once at creation; only its SHA-256 hash is stored, so a database
+-- leak doesn't hand out access. Keys authenticate with an
+-- Authorization: Bearer <key> header.
+CREATE TABLE IF NOT EXISTS api_keys (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  key_hash TEXT NOT NULL UNIQUE,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  last_used_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_api_keys_hash ON api_keys(key_hash);
 `;
 
 /**
@@ -526,6 +539,11 @@ async function ensureProvenanceColumns(): Promise<void> {
   for (const table of ["school_tasks", "finance_transactions"]) {
     await ensureColumn(table, "source", "TEXT");
     await ensureColumn(table, "external_event_id", "INTEGER");
+  }
+  // Agent-written rows are attributed, so the UI can show what you typed
+  // versus what Muse logged from a conversation.
+  for (const table of ["leetcode_logs", "gym_logs", "checklist_items"]) {
+    await ensureColumn(table, "source", "TEXT NOT NULL DEFAULT 'manual'");
   }
 }
 

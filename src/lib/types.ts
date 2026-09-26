@@ -5,6 +5,8 @@ export interface GymLog {
   duration_min: number | null;
   notes: string | null;
   created_at: string;
+  /** "Muse" when logged from a conversation, null/"manual" when typed by hand. */
+  source?: string | null;
 }
 
 export interface MealPrep {
@@ -39,6 +41,8 @@ export interface LeetcodeLog {
   url: string | null;
   notes: string | null;
   created_at: string;
+  /** "Muse" when logged from a conversation, null/"manual" when typed by hand. */
+  source?: string | null;
 }
 
 export type InterviewStage =
@@ -104,6 +108,8 @@ export interface ChecklistItem {
   done: 0 | 1;
   done_date: string | null;
   created_at: string;
+  /** "Muse" when logged from a conversation, null/"manual" when typed by hand. */
+  source?: string | null;
 }
 
 export interface ChecklistCompletion {
@@ -135,6 +141,17 @@ export interface CryptoHoldingWithPrice extends CryptoHolding {
 export interface Passkey {
   id: number;
   label: string;
+  created_at: string;
+  last_used_at: string | null;
+}
+
+/**
+ * A machine credential for the agent API. The raw key is shown once at
+ * creation and never again — list responses carry metadata only.
+ */
+export interface ApiKey {
+  id: number;
+  name: string;
   created_at: string;
   last_used_at: string | null;
 }

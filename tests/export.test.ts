@@ -26,6 +26,9 @@ const DELIBERATELY_EXCLUDED: Record<string, string> = {
   schema_migrations: "bookkeeping about the database, not data about the owner",
   // Deleted as it is read; anything left is in flight, not history.
   shared_images: "a transient handoff",
+  // Key hashes authenticate the agent API. An export is a plaintext file;
+  // hashes in it are a credential leak waiting for an email forward.
+  api_keys: "holds credential material",
 };
 
 function schemaTables(): string[] {

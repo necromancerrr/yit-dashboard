@@ -26,6 +26,12 @@ const PUBLIC_PATHS = [
 // screen" fetch these before (and regardless of) auth, so they can't be
 // gated behind the login redirect the way the rest of the app is.
 const PUBLIC_PREFIXES = ["/icon", "/apple-icon"];
+// The agent API authenticates itself: every route under /api/agent/* requires
+// `Authorization: Bearer <key>` via requireAgentKey (see src/lib/agent-auth.ts)
+// and answers 401 without one. Letting it through here is safe the way the
+// passkey registration routes were NOT — there is no weaker sub-route hiding
+// under this prefix, because the Bearer check is the only auth these routes
+// have.
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -33,6 +39,7 @@ export async function proxy(request: NextRequest) {
   if (
     PUBLIC_PATHS.includes(pathname) ||
     PUBLIC_PREFIXES.some((p) => pathname.startsWith(p)) ||
+    pathname.startsWith("/api/agent/") ||
     pathname.startsWith("/_next") ||
     pathname.startsWith("/favicon")
   ) {

@@ -6,7 +6,7 @@ import { Wallet, Plus, Trash2, ArrowDownRight, ArrowUpRight, Pencil } from "luci
 import { fetcher, apiPost, apiPatch } from "@/lib/fetcher";
 import { useUndoableDelete } from "@/lib/useUndoableDelete";
 import { EmptyState } from "@/components/EmptyState";
-import { FromEmail } from "@/components/FromEmail";
+import { ProvenanceBadge } from "@/components/ProvenanceBadge";
 import { Modal } from "@/components/Modal";
 import { SwipeableRow } from "@/components/SwipeableRow";
 import { Fab } from "@/components/Fab";
@@ -346,7 +346,7 @@ export function TransactionsPanel() {
                       style={{ color: "var(--ink-muted)" }}
                     >
                       {fmt(t.date)}
-                      <FromEmail source={t.source} />
+                      <ProvenanceBadge source={t.source} />
                     </p>
                   </div>
                 </button>

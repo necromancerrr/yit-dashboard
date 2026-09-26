@@ -8,7 +8,7 @@ import { useUndoableDelete } from "@/lib/useUndoableDelete";
 import { usePullToRefresh } from "@/lib/usePullToRefresh";
 import { PageHeader } from "@/components/PageHeader";
 import { EmptyState } from "@/components/EmptyState";
-import { FromEmail } from "@/components/FromEmail";
+import { ProvenanceBadge } from "@/components/ProvenanceBadge";
 import { Modal } from "@/components/Modal";
 import { SwipeableRow } from "@/components/SwipeableRow";
 import { Fab } from "@/components/Fab";
@@ -163,7 +163,7 @@ export default function SchoolPage() {
                     <div className="min-w-0">
                       <p className="text-sm font-medium truncate flex items-center gap-1.5">
                         <span className="truncate">{task.title}</span>
-                        <FromEmail source={task.source} />
+                        <ProvenanceBadge source={task.source} />
                       </p>
                       <p className="text-xs flex items-center gap-1.5" style={{ color: overdue ? "var(--critical)" : "var(--ink-muted)" }}>
                         {task.course} · {fmt(task.due_date)} {overdue ? "· overdue" : ""}

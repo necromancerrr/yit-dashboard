@@ -11,6 +11,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { parseISODate } from "@/lib/date";
 import { useWebAuthnSupport } from "@/lib/useWebAuthnSupport";
 import { passkeyErrorMessage } from "@/lib/passkey-errors";
+import { AgentKeysPanel } from "./AgentKeysPanel";
 import type { Passkey } from "@/lib/types";
 
 export default function SecurityPage() {
@@ -127,7 +128,7 @@ export default function SecurityPage() {
         )}
       </div>
 
-      <div className="card p-4 flex gap-3">
+      <div className="card p-4 flex gap-3 mb-4">
         <ShieldCheck size={16} style={{ color: "var(--good)" }} className="shrink-0 mt-0.5" />
         <div className="text-xs leading-relaxed" style={{ color: "var(--ink-muted)" }}>
           <p className="mb-1.5">
@@ -140,6 +141,8 @@ export default function SecurityPage() {
           </p>
         </div>
       </div>
+
+      <AgentKeysPanel />
     </div>
   );
 }

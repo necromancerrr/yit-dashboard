@@ -11,6 +11,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { Modal } from "@/components/Modal";
 import { SwipeableRow } from "@/components/SwipeableRow";
 import { Fab } from "@/components/Fab";
+import { ProvenanceBadge } from "@/components/ProvenanceBadge";
 import type { ChecklistItem } from "@/lib/types";
 
 function groupByCategory(items: ChecklistItem[]) {
@@ -163,6 +164,7 @@ export default function ChecklistPage() {
                       >
                         {item.title}
                         {item.recurring ? <Repeat size={11} style={{ color: "var(--ink-muted)" }} /> : null}
+                        <ProvenanceBadge source={item.source} />
                       </span>
                     </button>
                       </div>

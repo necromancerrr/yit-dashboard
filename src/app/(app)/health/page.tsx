@@ -11,6 +11,7 @@ import { Modal } from "@/components/Modal";
 import { Fab } from "@/components/Fab";
 import { SwipeableRow } from "@/components/SwipeableRow";
 import { MealPrepPanel } from "./MealPrepPanel";
+import { ProvenanceBadge } from "@/components/ProvenanceBadge";
 import { parseISODate, todayISO } from "@/lib/date";
 import type { GymLog } from "@/lib/types";
 
@@ -132,7 +133,10 @@ export default function HealthPage() {
                         <Dumbbell size={15} color="var(--cat-gym)" />
                       </div>
                       <div className="min-w-0">
-                        <p className="text-sm font-medium truncate">{log.workout_type}</p>
+                        <p className="text-sm font-medium truncate flex items-center gap-1.5">
+                          {log.workout_type}
+                          <ProvenanceBadge source={log.source} />
+                        </p>
                         <p className="text-xs flex items-center gap-1.5" style={{ color: "var(--ink-muted)" }}>
                           {fmt(log.date)}
                           {log.duration_min ? (
