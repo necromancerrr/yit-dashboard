@@ -18,6 +18,7 @@ import {
   ImagePlus,
   ExternalLink,
   Check,
+  AlertTriangle,
 } from "lucide-react";
 import { fetcher, apiPost, apiPatch } from "@/lib/fetcher";
 import { useUndoableDelete } from "@/lib/useUndoableDelete";
@@ -34,6 +35,9 @@ interface ImportSource {
   author: string | null;
   thumbnailUrl: string | null;
   embedUrl: string;
+  /** False when no vision-capable AI key is configured server-side — the
+      draft button explains itself instead of failing with a 503. */
+  visionAvailable: boolean;
 }
 
 interface Proposal {
@@ -746,9 +750,31 @@ function MealImportModal({
 
             {source && (
               <div className="flex flex-col gap-2">
+                {!source.visionAvailable && (
+                  <p className="text-xs p-2.5 rounded-lg flex items-start gap-2" style={{ background: "color-mix(in srgb, var(--warning) 12%, transparent)", color: "var(--ink-secondary)" }}>
+                    <AlertTriangle size={13} className="shrink-0 mt-0.5" />
+                    AI drafts need a vision-capable key on the server. Add ANTHROPIC_API_KEY to the
+                    Vercel env vars and redeploy — DeepSeek&apos;s models are text-only, so they
+                    can&apos;t read screenshots.
+                  </p>
+                )}
+                {source.visionAvailable && source.platform === "instagram" && shots.length === 0 && (
+                  <p className="text-xs p-2.5 rounded-lg flex items-start gap-2" style={{ background: "color-mix(in srgb, var(--accent) 12%, transparent)", color: "var(--ink-secondary)" }}>
+                    <ImagePlus size={13} className="shrink-0 mt-0.5" />
+                    Instagram shares no preview, so the AI can&apos;t read the link alone — attach
+                    1–3 screenshots of the recipe (ingredients / steps) below and it will read those.
+                  </p>
+                )}
                 <button
                   onClick={draftRecipe}
-                  disabled={drafting}
+                  disabled={drafting || !source.visionAvailable || (!source.thumbnailUrl && shots.length === 0)}
+                  title={
+                    !source.visionAvailable
+                      ? "Needs ANTHROPIC_API_KEY on the server"
+                      : !source.thumbnailUrl && shots.length === 0
+                        ? "Attach a screenshot first — there's no preview for the AI to read"
+                        : undefined
+                  }
                   className="btn btn-ghost w-full disabled:opacity-50"
                 >
                   {drafting ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
@@ -788,7 +814,9 @@ function MealImportModal({
                   </div>
                 )}
                 <p className="text-xs" style={{ color: "var(--ink-muted)" }}>
-                  The AI sees the thumbnail and title — screenshots of the recipe in the video make the draft far more accurate.
+                  {source.platform === "instagram"
+                    ? "The AI reads your screenshots — capture the ingredients list and the steps from the video."
+                    : "The AI sees the thumbnail and title — screenshots of the recipe in the video make the draft far more accurate."}
                 </p>
               </div>
             )}

@@ -49,6 +49,51 @@
   --heat-5: #8b6ef5;
 }
 
+/* Light theme — every variable above, re-stepped for paper instead of ink.
+   Chosen from <html data-theme="light">, which the theme script sets before
+   first paint (see src/lib/theme.ts). Accent and category hues stay in the
+   same families, darkened until they read on white. */
+[data-theme="light"] {
+  color-scheme: light;
+
+  --page: #f2f3f5;
+  --surface: #ffffff;
+  --surface-raised: #e9ebee;
+  --border: rgba(20, 22, 28, 0.09);
+  --border-strong: rgba(20, 22, 28, 0.17);
+  --ink-primary: #17181d;
+  --ink-secondary: #4c4f59;
+  --ink-muted: #8b8e97;
+  --gridline: #e2e4e9;
+
+  --accent: #1f6fd6;
+  --accent-strong: #1a5cb4;
+  --accent-soft: rgba(31, 111, 214, 0.12);
+  --accent-2: #6f63e8;
+  --brand-gradient: linear-gradient(135deg, var(--accent), var(--accent-2));
+  --focus-ring: #1f6fd6;
+
+  --good: #0d8a2e;
+  --warning: #a86e00;
+  --serious: #c25f2e;
+  --critical: #cf4444;
+
+  --cat-leetcode: #1f6fd6;
+  --cat-gym: #c2521f;
+  --cat-finance: #12805c;
+  --cat-school: #a86e00;
+  --cat-interviews: #c2437a;
+  --cat-checklist: #6f63e8;
+  --cat-crypto: #a87b1a;
+
+  --heat-0: #e9edf3;
+  --heat-1: #c3d4ef;
+  --heat-2: #9db9e6;
+  --heat-3: #7499da;
+  --heat-4: #4f7ccb;
+  --heat-5: #6f63e8;
+}
+
 @theme inline {
   --color-page: var(--page);
   --color-surface: var(--surface);
@@ -71,6 +116,14 @@
 html,
 body {
   height: 100%;
+}
+
+/* 18px base instead of the browser's 16px. The whole app is rem-based, so
+   type AND spacing scale together — the "everything feels small" fix is one
+   line, not a hundred. The Large text-size setting (see src/lib/theme.ts)
+   steps this to 125% via an inline style. */
+html {
+  font-size: 112.5%;
 }
 
 body {

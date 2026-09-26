@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { handleRoute, jsonError } from "@/lib/api-helpers";
+import { getVisionProvider } from "@/lib/ai";
 import { detectMealSource, embedUrlFor, isShortLinkHost, type MealPlatform } from "@/lib/meal-source";
 
 // Turns a pasted video link into a draft — and deliberately writes NOTHING.
@@ -89,6 +90,10 @@ export async function POST(req: NextRequest) {
       author: meta?.author_name ?? null,
       thumbnailUrl: meta?.thumbnail_url ?? null,
       embedUrl: embedUrlFor(source),
+      // The client needs this before offering the "Draft with AI" button:
+      // a missing key fails at extract time with a 503, which reads as
+      // "the feature is broken" rather than "a key is missing".
+      visionAvailable: getVisionProvider() !== null,
     });
   });
 }
