@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { handleRoute, jsonError } from "@/lib/api-helpers";
-import { detectMealSource, embedUrlFor, type MealPlatform } from "@/lib/meal-source";
+import { detectMealSource, embedUrlFor, isShortLinkHost, type MealPlatform } from "@/lib/meal-source";
 
 // Turns a pasted video link into a draft — and deliberately writes NOTHING.
 // Public oEmbed (TikTok, YouTube) supplies the title/author/thumbnail without
@@ -30,15 +30,27 @@ async function fetchOEmbed(endpoint: string): Promise<OEmbed | null> {
   }
 }
 
-/** Short links (vm.tiktok.com, …) only resolve over the network. */
+/** Short links (vm.tiktok.com, …) only resolve over the network — and only
+ *  from the allowlisted hosts in meal-source. Anything else is never fetched:
+ *  the server must not be usable as a proxy for arbitrary URLs (SSRF).
+ *  Redirects are followed manually (never the page body): cheaper, and it
+ *  works whether or not the host honors HEAD. */
 async function resolveShortLink(raw: string): Promise<string> {
+  if (!isShortLinkHost(raw)) return raw;
+  let current = raw.trim();
   try {
-    const res = await fetch(raw, {
-      method: "HEAD",
-      redirect: "follow",
-      signal: AbortSignal.timeout(6000),
-    });
-    return res.url || raw;
+    for (let hop = 0; hop < 5; hop++) {
+      const res = await fetch(current, {
+        method: "HEAD",
+        redirect: "manual",
+        signal: AbortSignal.timeout(6000),
+      });
+      const location = res.headers.get("location");
+      if ((res.status < 300 || res.status > 399) && !location) return current;
+      if (!location) return current;
+      current = new URL(location, current).toString();
+    }
+    return current;
   } catch {
     return raw;
   }

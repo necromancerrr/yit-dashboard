@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withDb } from "@/lib/api-helpers";
-import { detectMealSource } from "@/lib/meal-source";
+import { detectMealSource, isShortLinkHost } from "@/lib/meal-source";
 
 // The OS share sheet posts here.
 //
@@ -50,10 +50,12 @@ export async function POST(req: NextRequest) {
 
     // A link share arrives as `url`, or folded into `text` — Instagram's
     // share sheet sends both. A recipe-video link opens Health's meal import
-    // with the lookup already running; anything else falls through to the
-    // image flow below.
+    // with the lookup already running; allowlisted short links (vm.tiktok.com)
+    // can't be parsed without the network, so they ride along too and the
+    // import route resolves them. Anything else falls through to the image
+    // flow below.
     const sharedUrl = firstUrl(form.get("url"), form.get("text"));
-    if (sharedUrl && detectMealSource(sharedUrl)) {
+    if (sharedUrl && (detectMealSource(sharedUrl) || isShortLinkHost(sharedUrl))) {
       return redirectTo(req, `/health?meal_url=${encodeURIComponent(sharedUrl)}`);
     }
 

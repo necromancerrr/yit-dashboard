@@ -27,6 +27,22 @@ const HOST_PATTERNS: { platform: MealPlatform; hosts: RegExp }[] = [
   { platform: "youtube", hosts: /^(www\.)?(youtube\.com|youtu\.be)$/i },
 ];
 
+/**
+ * Hosts whose links are *only* redirects to a canonical post URL. The server
+ * may follow these — and ONLY these — to resolve the real link. This
+ * allowlist is the SSRF guard: without it, "resolve any link" would let a
+ * caller make the server fetch arbitrary internal URLs.
+ */
+const SHORT_LINK_HOSTS: { platform: MealPlatform; hosts: RegExp }[] = [
+  { platform: "tiktok", hosts: /^(vm|vt)\.tiktok\.com$/i },
+];
+
+/** True when the URL is a known share-short-link host (vm.tiktok.com, …). */
+export function isShortLinkHost(raw: string): boolean {
+  const url = normalizeUrl(raw);
+  return !!url && SHORT_LINK_HOSTS.some((p) => p.hosts.test(url.hostname));
+}
+
 function normalizeUrl(raw: string): URL | null {
   const trimmed = raw.trim();
   if (!trimmed) return null;
