@@ -122,20 +122,30 @@ export function Nav() {
   return (
     <>
       <aside
-        className="hidden md:flex md:w-56 shrink-0 flex-col border-r px-3 py-5"
-        style={{ borderColor: "var(--border)" }}
+        className="hidden md:flex md:w-60 shrink-0 flex-col px-3 py-6"
+        style={{
+          borderRight: "1px solid var(--border)",
+          background: "color-mix(in srgb, var(--surface) 60%, transparent)",
+        }}
       >
-        <div className="flex items-center gap-2.5 px-2 mb-6">
-          <Logo size="sm" />
-          <span className="font-semibold text-sm">{getBrandName()}</span>
+        <div className="flex items-center gap-3 px-2 mb-8">
+          <Logo size="md" />
+          <div className="min-w-0">
+            <p className="font-display font-semibold text-[15px] leading-tight tracking-tight">
+              {getBrandName()}
+            </p>
+            <p className="text-[11px]" style={{ color: "var(--ink-muted)" }}>
+              Personal OS
+            </p>
+          </div>
         </div>
 
         {/* Scrolls rather than clips: the list grows every time a section is
             added, and a laptop in a short window would silently lose the end. */}
-        <nav className="flex flex-col gap-4 flex-1 overflow-y-auto" aria-label="Primary">
+        <nav className="flex flex-col gap-5 flex-1 overflow-y-auto" aria-label="Primary">
           {GROUPS.map((group) => (
             <div key={group.id}>
-              <p className="label px-2.5 mb-1">{group.label}</p>
+              <p className="label px-3 mb-1.5">{group.label}</p>
               <div className="flex flex-col gap-0.5">
                 {NAV_ITEMS.filter((item) => item.group === group.id).map((item) => {
                   const active = pathname === item.href;
@@ -145,21 +155,27 @@ export function Nav() {
                       key={item.href}
                       href={item.href}
                       aria-current={active ? "page" : undefined}
-                      className="flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm transition-colors"
+                      className="flex items-center gap-3 px-3 py-2 rounded-xl text-sm transition-all"
                       style={{
-                        background: active ? "var(--surface-raised)" : "transparent",
+                        background: active
+                          ? "color-mix(in srgb, var(--accent) 13%, transparent)"
+                          : "transparent",
                         color: active ? "var(--ink-primary)" : "var(--ink-secondary)",
                         fontWeight: active ? 600 : 500,
                       }}
                     >
-                      <Icon size={16} color={active ? "var(--accent)" : "var(--ink-muted)"} />
+                      <Icon
+                        size={17}
+                        color={active ? "var(--accent)" : "var(--ink-muted)"}
+                        strokeWidth={active ? 2.25 : 2}
+                      />
                       <span className="flex-1">{item.label}</span>
                       {/* A shortcut nobody knows about is a shortcut nobody
                           uses, and the palette's whole point is reaching it
                           without coming here first. */}
                       {item.href === "/search" && (
                         <kbd
-                          className="text-[10px] px-1.5 py-0.5 rounded border"
+                          className="text-[10px] px-1.5 py-0.5 rounded-md border"
                           style={{ borderColor: "var(--border)", color: "var(--ink-muted)" }}
                         >
                           ⌘K
@@ -173,10 +189,10 @@ export function Nav() {
           ))}
         </nav>
 
-        <div className="pt-3 mt-3 border-t flex flex-col" style={{ borderColor: "var(--border)" }}>
+        <div className="pt-3 mt-3 border-t flex flex-col gap-0.5" style={{ borderColor: "var(--border)" }}>
           <a
             href="/api/export"
-            className="flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm transition-colors"
+            className="flex items-center gap-3 px-3 py-2 rounded-xl text-sm transition-colors"
             style={{ color: "var(--ink-muted)" }}
             title="Download all your data as JSON"
           >
@@ -185,7 +201,7 @@ export function Nav() {
           </a>
           <button
             onClick={handleLogout}
-            className="flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm transition-colors"
+            className="flex items-center gap-3 px-3 py-2 rounded-xl text-sm transition-colors text-left"
             style={{ color: "var(--ink-muted)" }}
           >
             <LogOut size={16} />
@@ -194,58 +210,88 @@ export function Nav() {
         </div>
       </aside>
 
-      {/* Mobile bottom nav */}
+      {/* Mobile: a floating tab bar, detached from the screen edge. A
+          full-bleed bar reads as browser chrome; a floating pill reads as
+          product. */}
       <nav
         aria-label="Primary (mobile)"
-        className="md:hidden fixed bottom-0 left-0 right-0 z-20 flex items-center justify-around border-t px-1 py-1.5 backdrop-blur"
-        style={{ borderColor: "var(--border)", background: "rgba(13,13,13,0.85)" }}
+        className="md:hidden fixed bottom-0 left-0 right-0 z-20 flex justify-center px-4 pointer-events-none"
+        style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
       >
-        {NAV_ITEMS.filter((item) => MOBILE_NAV_HREFS.has(item.href)).map((item) => {
-          const active = pathname === item.href;
-          const Icon = item.icon;
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              aria-current={active ? "page" : undefined}
-              className="flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-lg min-w-[52px]"
-            >
-              <Icon size={18} color={active ? "var(--accent)" : "var(--ink-muted)"} />
-              <span
-                className="text-[10px]"
-                style={{ color: active ? "var(--ink-primary)" : "var(--ink-muted)" }}
-              >
-                {item.label}
-              </span>
-            </Link>
-          );
-        })}
-
-        <button
-          onClick={() => setMoreOpen(true)}
-          aria-haspopup="dialog"
-          aria-expanded={moreOpen}
-          className="flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-lg min-w-[52px]"
+        <div
+          className="pointer-events-auto flex items-center justify-around gap-1 rounded-2xl border px-2 py-1.5 backdrop-blur-xl"
+          style={{
+            borderColor: "var(--border-strong)",
+            background: "color-mix(in srgb, var(--surface) 82%, transparent)",
+            boxShadow: "var(--shadow-pop)",
+            width: "100%",
+            maxWidth: "26rem",
+          }}
         >
-          <MoreHorizontal
-            size={18}
-            color={
-              overflowItems.some((i) => i.href === pathname)
-                ? "var(--accent)"
-                : "var(--ink-muted)"
-            }
-          />
-          <span
-            className="text-[10px]"
+          {NAV_ITEMS.filter((item) => MOBILE_NAV_HREFS.has(item.href)).map((item) => {
+            const active = pathname === item.href;
+            const Icon = item.icon;
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                aria-current={active ? "page" : undefined}
+                className="flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl min-w-[52px] transition-colors"
+                style={{
+                  background: active
+                    ? "color-mix(in srgb, var(--accent) 13%, transparent)"
+                    : "transparent",
+                }}
+              >
+                <Icon
+                  size={19}
+                  color={active ? "var(--accent)" : "var(--ink-muted)"}
+                  strokeWidth={active ? 2.25 : 2}
+                />
+                <span
+                  className="text-[10px]"
+                  style={{
+                    color: active ? "var(--ink-primary)" : "var(--ink-muted)",
+                    fontWeight: active ? 600 : 500,
+                  }}
+                >
+                  {item.label}
+                </span>
+              </Link>
+            );
+          })}
+
+          <button
+            onClick={() => setMoreOpen(true)}
+            aria-haspopup="dialog"
+            aria-expanded={moreOpen}
+            className="flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl min-w-[52px] transition-colors"
             style={{
-              color: overflowItems.some((i) => i.href === pathname)
-                ? "var(--ink-primary)"
-                : "var(--ink-muted)",
+              background: overflowItems.some((i) => i.href === pathname)
+                ? "color-mix(in srgb, var(--accent) 13%, transparent)"
+                : "transparent",
             }}
           >
-            More
-          </span>
-        </button>
+            <MoreHorizontal
+              size={19}
+              color={
+                overflowItems.some((i) => i.href === pathname)
+                  ? "var(--accent)"
+                  : "var(--ink-muted)"
+              }
+            />
+            <span
+              className="text-[10px]"
+              style={{
+                color: overflowItems.some((i) => i.href === pathname)
+                  ? "var(--ink-primary)"
+                  : "var(--ink-muted)",
+              }}
+            >
+              More
+            </span>
+          </button>
+        </div>
       </nav>
 
       {moreOpen && (

@@ -2,16 +2,19 @@ import type { LucideIcon } from "lucide-react";
 
 export function EmptyState({ icon: Icon, title, sub }: { icon: LucideIcon; title: string; sub?: string }) {
   return (
-    <div className="flex flex-col items-center justify-center text-center py-14 px-4">
+    <div className="flex flex-col items-center justify-center text-center py-16 px-4">
       <div
-        className="w-11 h-11 rounded-xl flex items-center justify-center mb-3"
-        style={{ background: "var(--surface-raised)" }}
+        className="w-14 h-14 rounded-2xl flex items-center justify-center mb-4"
+        style={{
+          background: "color-mix(in srgb, var(--accent) 10%, transparent)",
+          border: "1px solid var(--border)",
+        }}
       >
-        <Icon size={18} color="var(--ink-muted)" />
+        <Icon size={22} color="var(--accent)" />
       </div>
-      <p className="text-sm font-medium">{title}</p>
+      <p className="font-display text-lg font-semibold tracking-tight">{title}</p>
       {sub && (
-        <p className="text-xs mt-1 max-w-xs" style={{ color: "var(--ink-muted)" }}>
+        <p className="text-sm mt-1.5 max-w-xs leading-relaxed" style={{ color: "var(--ink-muted)" }}>
           {sub}
         </p>
       )}

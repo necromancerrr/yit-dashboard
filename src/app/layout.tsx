@@ -1,10 +1,21 @@
 import type { Metadata, Viewport } from "next";
+import { Inter, Space_Grotesk } from "next/font/google";
 import "./globals.css";
 import { getBrandName } from "@/lib/identity";
 import { ServiceWorkerManager } from "@/components/ServiceWorkerManager";
 import { ThemeManager } from "@/components/ThemeManager";
 
 const brandName = getBrandName();
+
+// Self-hosted via next/font: no CDN dependency, works offline once cached,
+// and no layout shift from a late webfont. Inter carries the UI; Space
+// Grotesk carries display type (page titles, hero numbers).
+const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
+const grotesk = Space_Grotesk({
+  subsets: ["latin"],
+  variable: "--font-grotesk",
+  display: "swap",
+});
 
 /**
  * Runs before first paint: reads the saved theme (or the OS preference) and
@@ -33,7 +44,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" className={`${inter.variable} ${grotesk.variable}`}>
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_BOOT_SCRIPT }} />
       </head>

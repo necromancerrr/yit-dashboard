@@ -4,20 +4,22 @@ export function PageHeader({
   action,
 }: {
   title: string;
-  subtitle?: string;
+  subtitle?: React.ReactNode;
   action?: React.ReactNode;
 }) {
   return (
-    <div className="flex items-start justify-between gap-4 mb-6">
-      <div>
-        <h1 className="text-xl font-semibold tracking-tight">{title}</h1>
+    <div className="flex items-start justify-between gap-4 mb-6 md:mb-8">
+      <div className="min-w-0">
+        <h1 className="font-display text-[1.65rem] md:text-[2rem] font-semibold tracking-tight leading-tight">
+          {title}
+        </h1>
         {subtitle && (
-          <p className="text-sm mt-1" style={{ color: "var(--ink-muted)" }}>
+          <div className="text-sm mt-1.5" style={{ color: "var(--ink-muted)" }}>
             {subtitle}
-          </p>
+          </div>
         )}
       </div>
-      {action}
+      {action && <div className="shrink-0 pt-1">{action}</div>}
     </div>
   );
 }

@@ -12,9 +12,11 @@ import {
   ArrowRight,
   Check,
   Loader2,
+  Dumbbell,
+  Wallet,
+  Sparkles,
 } from "lucide-react";
 import { fetcher, apiPatch } from "@/lib/fetcher";
-import { PageHeader } from "@/components/PageHeader";
 import { getDisplayName } from "@/lib/identity";
 import { parseISODate } from "@/lib/date";
 import { usePullToRefresh } from "@/lib/usePullToRefresh";
@@ -148,12 +150,15 @@ function PriorityRow({
   const tickable = item.checklistItemId !== undefined;
   return (
     <li>
-      <Link href={item.href} className="flex items-center gap-3 px-4 py-3 group">
+      <Link
+        href={item.href}
+        className="flex items-center gap-3.5 px-5 py-3.5 group transition-colors hover:bg-[var(--surface-raised)]"
+      >
         {tickable ? (
           <HabitCheck item={item} onDone={onHabitDone} />
         ) : (
           <span
-            className="text-xs w-4 shrink-0 tabular-nums"
+            className="text-xs w-4 shrink-0 tabular-nums font-display"
             style={{ color: "var(--ink-muted)" }}
             aria-hidden
           >
@@ -162,22 +167,24 @@ function PriorityRow({
         )}
         {!tickable && (
           <span
-            className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
-            style={{ background: `color-mix(in srgb, ${color} 16%, transparent)` }}
+            className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
+            style={{ background: `color-mix(in srgb, ${color} 14%, transparent)` }}
           >
-            <Icon size={14} color={color} />
+            <Icon size={15} color={color} />
           </span>
         )}
         <span className="min-w-0 flex-1">
-          <span className="block text-sm font-medium truncate">{item.title}</span>
+          <span className="block text-[0.95rem] font-medium tracking-[-0.01em] truncate">
+            {item.title}
+          </span>
           {item.detail && (
-            <span className="block text-xs truncate" style={{ color: "var(--ink-muted)" }}>
+            <span className="block text-xs truncate mt-0.5" style={{ color: "var(--ink-muted)" }}>
               {item.detail}
             </span>
           )}
         </span>
         <ArrowRight
-          size={14}
+          size={15}
           className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
           color="var(--ink-muted)"
         />
@@ -195,6 +202,37 @@ export default function TodayPage() {
   const { pull, refreshing } = usePullToRefresh(() => mutate());
 
   const items = data?.items ?? [];
+  const dateLine = data
+    ? parseISODate(data.date).toLocaleDateString(undefined, {
+        weekday: "long",
+        month: "long",
+        day: "numeric",
+      })
+    : "";
+
+  const stats = [
+    {
+      href: "/health",
+      label: "Gym streak",
+      value: isLoading ? "–" : `${data?.gymStreak ?? 0}d`,
+      icon: Dumbbell,
+      color: "var(--cat-gym)",
+    },
+    {
+      href: "/checklist",
+      label: "Habits today",
+      value: isLoading ? "–" : `${data?.checklistDoneToday ?? 0}/${data?.checklistTotalToday ?? 0}`,
+      icon: Flame,
+      color: "var(--cat-checklist)",
+    },
+    {
+      href: "/money",
+      label: "Month net",
+      value: isLoading ? "–" : currency(data?.monthNet ?? 0),
+      icon: Wallet,
+      color: "var(--cat-finance)",
+    },
+  ];
 
   return (
     <div>
@@ -210,22 +248,20 @@ export default function TodayPage() {
           </div>
         )}
       </div>
-      <PageHeader
-        title={`${greeting()}, ${getDisplayName()}`}
-        // The server's day, not the browser's. Every date on this page —
-        // what counts as due today, when the checklist rolled over — is
-        // resolved against APP_TIMEZONE, and a heading that disagrees with the
-        // list underneath it is the app calling itself a liar.
-        subtitle={
-          data
-            ? parseISODate(data.date).toLocaleDateString(undefined, {
-                weekday: "long",
-                month: "long",
-                day: "numeric",
-              })
-            : "\u00a0"
-        }
-      />
+
+      {/* Hero — the OS home screen. Greeting in display type, the date as a
+          kicker, and the day's pulse in one glance. */}
+      <header className="mb-6 md:mb-8">
+        <p className="label mb-2">{dateLine || "\u00a0"}</p>
+        <h1 className="font-display text-[2rem] md:text-[2.75rem] font-semibold tracking-tight leading-[1.05]">
+          {greeting()}, {getDisplayName()}
+        </h1>
+        {!isLoading && items.length > 0 && (
+          <p className="text-sm mt-2" style={{ color: "var(--ink-muted)" }}>
+            {items.length} {items.length === 1 ? "thing" : "things"} on your plate today.
+          </p>
+        )}
+      </header>
 
       {/* Capture, before attention: the cheapest moment to record something is
           the moment you thought of it, and it belongs on the screen you are
@@ -238,16 +274,18 @@ export default function TodayPage() {
       <QuickAdd />
 
       {/* Attention */}
-      <div className="card mb-4">
+      <section className="card mb-4 overflow-hidden">
         <div
-          className="flex items-center justify-between px-4 py-3 border-b"
+          className="flex items-center justify-between px-5 py-4 border-b"
           style={{ borderColor: "var(--border)" }}
         >
-          <h2 className="text-sm font-semibold">What matters today</h2>
+          <h2 className="font-display text-[1.05rem] font-semibold tracking-tight">
+            What matters today
+          </h2>
           {(data?.inboxOpenCount ?? 0) > 0 && (
             <Link
               href="/inbox"
-              className="flex items-center gap-1.5 text-xs"
+              className="flex items-center gap-1.5 text-xs font-medium"
               style={{ color: "var(--accent)" }}
             >
               <InboxIcon size={13} />
@@ -261,8 +299,16 @@ export default function TodayPage() {
             Loading…
           </div>
         ) : items.length === 0 ? (
-          <div className="p-8 text-center">
-            <p className="text-sm">Nothing is due.</p>
+          <div className="p-10 text-center">
+            <div
+              className="w-12 h-12 rounded-2xl flex items-center justify-center mx-auto mb-3"
+              style={{
+                background: "color-mix(in srgb, var(--good) 14%, transparent)",
+              }}
+            >
+              <Check size={20} color="var(--good)" />
+            </div>
+            <p className="font-display text-lg font-semibold tracking-tight">All clear.</p>
             <p className="text-xs mt-1" style={{ color: "var(--ink-muted)" }}>
               No deadlines in the next week and today&apos;s habits are done.
             </p>
@@ -280,38 +326,41 @@ export default function TodayPage() {
             ))}
           </ul>
         )}
-      </div>
+      </section>
 
       {/* The briefing is only rendered when a provider actually produced one.
           No placeholder, no "AI unavailable" chrome — the page is complete
           without it. */}
       {data?.briefing && (
-        <div className="card p-4 mb-4">
-          <p className="label mb-1.5">Suggested focus</p>
-          <p className="text-sm" style={{ color: "var(--ink-secondary)" }}>
+        <div className="card p-5 mb-4">
+          <p className="label mb-2 flex items-center gap-1.5">
+            <Sparkles size={12} /> Suggested focus
+          </p>
+          <p className="text-[0.95rem] leading-relaxed" style={{ color: "var(--ink-secondary)" }}>
             {data.briefing}
           </p>
         </div>
       )}
 
-      {/* Context — one quiet strip, not a wall of cards. */}
+      {/* Context — three tiles, each a glanceable number with a way in. */}
       <div className="grid grid-cols-3 gap-3">
-        <Link href="/health" className="card p-4">
-          <p className="label mb-1">Gym streak</p>
-          <p className="text-lg font-semibold">{isLoading ? "–" : `${data?.gymStreak ?? 0}d`}</p>
-        </Link>
-        <Link href="/checklist" className="card p-4">
-          <p className="label mb-1">Habits</p>
-          <p className="text-lg font-semibold">
-            {isLoading
-              ? "–"
-              : `${data?.checklistDoneToday ?? 0}/${data?.checklistTotalToday ?? 0}`}
-          </p>
-        </Link>
-        <Link href="/money" className="card p-4">
-          <p className="label mb-1">This month</p>
-          <p className="text-lg font-semibold">{isLoading ? "–" : currency(data?.monthNet ?? 0)}</p>
-        </Link>
+        {stats.map((s) => {
+          const Icon = s.icon;
+          return (
+            <Link key={s.href} href={s.href} className="card p-4 md:p-5 block">
+              <div
+                className="w-8 h-8 rounded-lg flex items-center justify-center mb-3"
+                style={{ background: `color-mix(in srgb, ${s.color} 15%, transparent)` }}
+              >
+                <Icon size={15} color={s.color} />
+              </div>
+              <p className="font-display text-xl md:text-2xl font-semibold tracking-tight tabular-nums">
+                {s.value}
+              </p>
+              <p className="label mt-1">{s.label}</p>
+            </Link>
+          );
+        })}
       </div>
     </div>
   );
